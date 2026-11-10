@@ -57,7 +57,7 @@ const FADE = {
   loco: 0.16, run: 0.1, runatk: 0.05, launch: 0.05, slam: 0.06, slamland: 0.04, air: 0.08, attack: 0.06, dash: 0.05, jump: 0.06, jattack: 0.06, land: 0.05, special: 0.07,
   hurt: 0.05, knockdown: 0.08, down: 0.16, dead: 0.2, out: 0.2, getup: 0.1, grab: 0.1, throw: 0.06,
   crouch: 0.09, block: 0.05, bstep: 0.05, cjab: 0.04, sweep: 0.05, cast: 0.06, grabbed: 0.06, win: 0.25,
-  windup: 0.1, cwind: 0.1, recover: 0.16, charge: 0.1, grabbed: 0.08, thrown: 0.06, dying: 0.15,
+  windup: 0.1, cwind: 0.1, recover: 0.16, bpunch: 0.08, bstomp: 0.06, charge: 0.1, grabbed: 0.08, thrown: 0.06, dying: 0.15,
 };
 // 从这些状态回到待机/移动时用更长的过渡（收招 / 落地 / 受击恢复）
 const SLOW_EXIT = { crouch: 0.12, block: 0.12, cjab: 0.1, sweep: 0.16, cast: 0.16, bstep: 0.12, launch: 0.16, slamland: 0.18, run: 0.15, runatk: 0.2, attack: 0.14, land: 0.18, hurt: 0.22, getup: 0.2, special: 0.2, dash: 0.2, throw: 0.22, grab: 0.18, recover: 0.2 };
@@ -200,8 +200,8 @@ function kaiPunch(a, t, A0, A1, D, M, brain) {
 
 /* ---------------------------------------------------------------- v7：疾走 / 疾走攻击 / 远跳 / 边打边走 / 角色专属必杀 */
 const SPD = { kai: 4.2, mira: 5.2, bruno: 3.4, zed: 4.0 };   // 与服务器 char_stats 一致（单位/tick）
-export const SUPER_LEN = { kai: 38, mira: 40, bruno: 34, zed: 36 };
-export const SUPER_NAME = { kai: '升龙旋风', mira: '旋风腿', bruno: '震地拳', zed: '棍影乱舞' };
+export const SUPER_LEN = { kai: 38, mira: 40, bruno: 34, zed: 36, boss: 44 };
+export const SUPER_NAME = { kai: '升龙旋风', mira: '旋风腿', bruno: '震地拳', zed: '棍影乱舞', boss: '超频连锤' };
 /** 必杀的离地高度（与服务器 super_step 相同的公式；查看器 / 大厅预览用） */
 export function superZ(id, t) {
   if (id === 'kai') return t <= 6 ? 0 : t <= 26 ? 75 * Math.sin((Math.PI / 2) * (t - 6) / 20) : Math.max(0, 75 * (1 - (t - 26) / 10));
@@ -514,6 +514,39 @@ function launchPose(a, id, t) {
 }
 
 /**
+ * 泽德「挑天棍」（下 + 技，28 tick；判定 3..9，离地高度由服务器 z 给出）
+ *   0-3 压低身体、长棍拖在身后贴地 → 3-9 长棍从身后经脚前抡过头顶（整整一个大弧），人随棍势踮起小跳
+ *   → 9-16 棍举在头顶后上方、身体后仰 → 16-28 落地收棍
+ */
+function zedRisePose(a, t, brain) {
+  brain.ground = t > 3 && t < 16 ? 'none' : null;
+  const c = ramp(t, 0, 2.5);                       // 起手下压
+  const sw = ramp(t, 2.5, 9);                      // 抡棍进度
+  const r = 1 - ramp(t, 15, 27);                   // 收势
+  const w = c * r;
+  // 棍的方向角：-150°（身后贴地）→ 0°（正前方水平）→ +105°（头顶偏后）
+  const ang = (-150 + 255 * sw) * Math.PI / 180;
+  const dir = V(0, Math.sin(ang), Math.cos(ang));
+  // 身体：起手前俯，抡起后后仰；髋随棍转
+  const lean = 0.45 * (1 - sw) - 0.38 * sw;
+  a.rotate('spine_01', X, lean * w);
+  a.rotate('spine_02', X, 0.15 * (1 - sw) * w);
+  a.rotate('pelvis', Y, (0.45 - 0.75 * sw) * w);
+  a.rotate('Head', X, (-0.25 * (1 - sw) + 0.3 * sw) * w);
+  // 腿：起手弓步下压 → 空中前腿收、后腿蹬直 → 落地屈膝
+  const air = ramp(t, 3, 5) * (1 - ramp(t, 14, 16.5));
+  const land = ramp(t, 15, 17) * (1 - ramp(t, 20, 27));
+  leg(a, 'l', lerpDir(V(0.1, -0.55, 0.83), V(0.08, -0.25, 0.97), air), lerpDir(V(0.02, -1, -0.1), V(0.02, -0.85, -0.52), air), w);
+  leg(a, 'r', lerpDir(V(-0.06, -0.7, -0.7), V(-0.05, -0.95, -0.3), air), lerpDir(V(-0.02, -0.55, -0.83), V(-0.02, -0.8, -0.6), air), w);
+  if (land > 0) kaiLegs(a, 0.7 * land);
+  // 双手握棍：右手在前、左手在后，手臂指向棍的方向（略收在身前）
+  const hand = lerpDir(V(0, -0.35, 0.95), dir, 0.75);
+  arm(a, 'r', lerpDir(V(-0.25, -0.2, 0.95), hand, 0.7), hand, w);
+  arm(a, 'l', lerpDir(V(0.3, -0.35, 0.9), hand, 0.7), lerpDir(V(-0.2, -0.1, 1), hand, 0.85), w);
+  aimStaff(a, dir, w);
+}
+
+/**
  * 坠击（服务器 slam：地面版先小跳 ≈5 tick 再俯冲，空中版约 1.5 tick 后俯冲；落地进入 slamland）
  *   凯「陨火锤」/ 布鲁诺「千斤坠」：双手合握高举 → 抡下
  *   米拉「流星踵」：腿举过头 → 脚跟下劈
@@ -560,6 +593,18 @@ function slamLandPose(a, id, t) {
     arm(a, 'l', V(0.1, -0.6, 0.8), V(-0.3, -0.7, 0.65), k);
     arm(a, 'r', V(-0.1, -0.6, 0.8), V(0.3, -0.7, 0.65), k);
   }
+}
+
+function brunoLiftThrow(a, t) {
+  const up = ramp(t, 1, 8), dn = ramp(t, 9.5, 11.5), r = 1 - ramp(t, 14, 21);
+  const w = Math.max(up, dn) * r;
+  kaiLegs(a, (0.55 * (1 - up) + 0.25 * up * (1 - dn) + 0.75 * dn) * r);
+  a.rotate('spine_01', X, (-0.32 * up * (1 - dn) + 0.75 * dn) * r);
+  a.rotate('Head', X, (-0.35 * up * (1 - dn) - 0.35 * dn) * r);
+  const ua = lerpDir(lerpDir(V(0, -0.2, 1), V(0, 0.95, 0.25), up), V(0, -0.45, 0.9), dn);
+  const la = lerpDir(lerpDir(V(0, 0.5, 0.85), V(0, 1, -0.05), up), V(0, -0.6, 0.8), dn);
+  arm(a, 'l', V(0.35, ua.y, ua.z), V(0.1, la.y, la.z), w);
+  arm(a, 'r', V(-0.35, ua.y, ua.z), V(-0.1, la.y, la.z), w);
 }
 
 function flyingKick(a, t) {
@@ -733,10 +778,11 @@ function winPose(a, id, t, time) {
   }
 }
 
-const FAST_TURN = { cjab: 1, sweep: 1, cast: 1, block: 1, launch: 1, slam: 1, runatk: 1, attack: 1, dash: 1, special: 1, jattack: 1, throw: 1, windup: 1, cwind: 1, charge: 1, grab: 1 };
-const GROUNDED = { crouch: 1, block: 1, cjab: 1, sweep: 1, cast: 1, win: 1, grabbed: 1, launch: 1, slamland: 1, idle: 1, walk: 1, run: 1, runatk: 1, attack: 1, dash: 1, land: 1, special: 1, hurt: 1, grab: 1, throw: 1, recover: 1, windup: 1, cwind: 1, charge: 1 };
+const FAST_TURN = { bpunch: 1, bstomp: 1, cjab: 1, sweep: 1, cast: 1, block: 1, launch: 1, slam: 1, runatk: 1, attack: 1, dash: 1, special: 1, jattack: 1, throw: 1, windup: 1, cwind: 1, charge: 1, grab: 1 };
+const GROUNDED = { bpunch: 1, dead: 0, crouch: 1, block: 1, cjab: 1, sweep: 1, cast: 1, win: 1, grabbed: 1, launch: 1, slamland: 1, idle: 1, walk: 1, run: 1, runatk: 1, attack: 1, dash: 1, land: 1, special: 1, hurt: 1, grab: 1, throw: 1, recover: 1, windup: 1, cwind: 1, charge: 1 };
 const LYING = { down: 1, dead: 1, out: 1, getup: 1, dying: 1 };
 const FACE_YAW = 0.38;   // 朝向偏向镜头约 22°：以侧面为主，又能看到脸
+const BOSS_STATES = { bpunch: 1, bstomp: 1, charge: 1, cast: 1, special: 1, block: 1, grab: 1, throw: 1, win: 1, dead: 1, land: 1 };
 const ROBOT_EYE = { grunt: '#3df2ff', spark: '#ffe14a', brute: '#7dff4a', thrower: '#ff9df0', boss: '#ff3030' };
 const ROBOT_WALK = { grunt: [1.1, 2.2], spark: [1.6, 3.6], brute: [0.8, 1.6], thrower: [1.1, 2.4], boss: [0.8, 2.0] };   // [步频, 标称速度]
 const ROBOT_WINDUP = { grunt: 14, spark: 9, brute: 20, thrower: 16, boss: 18 };
@@ -929,8 +975,19 @@ export class Anim {
       case 'grabbed': {
         this.enter('grabbed', 'grabbed', t);
         a.play('Hit_Chest', { time: 0.12 });
-        a.body.rotation.x = -0.18;
-        post = () => { a.rotate('spine_01', X, -0.25); a.rotate('Head', X, -0.3 + 0.08 * Math.sin(time * 30)); };
+        const lift = clamp(((o.z || 0) - 6) / 60, 0, 1);    // 被布鲁诺举过头顶：身体放平、四肢挣扎
+        a.body.rotation.x = -0.18 - 1.35 * lift;
+        if (lift > 0) this.ground = 'none';
+        post = () => {
+          a.rotate('spine_01', X, -0.25); a.rotate('Head', X, -0.3 + 0.08 * Math.sin(time * 30));
+          if (lift > 0) {
+            const k = Math.sin(time * 22) * 0.25;
+            leg(a, 'l', V(0.15, -0.8 + k, 0.4), V(0.05, -0.9, -0.3), lift * 0.8);
+            leg(a, 'r', V(-0.15, -0.8 - k, 0.4), V(-0.05, -0.9, -0.3), lift * 0.8);
+            arm(a, 'l', V(0.7, 0.3 + k, 0.4), V(0.5, 0.6, 0.6), lift * 0.8);
+            arm(a, 'r', V(-0.7, 0.3 - k, 0.4), V(-0.5, 0.6, 0.6), lift * 0.8);
+          }
+        };
         break;
       }
       case 'air': {
@@ -1015,7 +1072,7 @@ export class Anim {
         // 挑空：上挑把敌人打上天（判定 3..6）
         this.enter('launch', 'launch', t);
         if (zed) a.play('Sword_Idle'); else if (id === 'mira') a.play('Idle_Loop'); else a.play(idleClip);
-        post = () => launchPose(a, id, t);
+        post = zed && o.a === 'zsp2' ? () => zedRisePose(a, t, this) : () => launchPose(a, id, t);
         break;
       }
       case 'slam': {
@@ -1093,7 +1150,11 @@ export class Anim {
       }
       case 'throw':
         this.enter('throw', 'throw', t);
-        a.play('OverhandThrow', { time: 0.25 + easeOut(t / 14) * 0.9 });
+        if (id === 'bruno') {
+          // 举起砸地：2-9 tick 把对手举过头顶（双臂上推），11 tick 前倾全力砸下，再慢慢直起身
+          a.play(idleClip);
+          post = () => brunoLiftThrow(a, t);
+        } else a.play('OverhandThrow', { time: 0.25 + easeOut(t / 14) * 0.9 });
         break;
       default:
         this.enter('loco', 'idle', t);
@@ -1120,11 +1181,177 @@ export class Anim {
     return { mv: this.stepDir || { x: 0, z: 0.5 }, w: this.stepW };
   }
 
+  /**
+   * 关底 Boss「OVERCLOCK」的格斗招式（服务器状态 → 机器人动作片段 + 程序化叠加）
+   *   bpunch 重拳 31 tick（0-9 蓄力，10-12 判定）/ bstomp 跳起踩地 38 tick（19 落地）/ charge 冲撞 46 tick（0-11 蓄力，12-34 冲）
+   *   cast 扔扳手 30 tick（13 出手）/ special 超频连锤 44 tick（6-31 连打，34 上冲重拳）/ block / grab / throw / win / dead / land
+   */
+  bossPose(o, t, dt, time) {
+    const a = this.a;
+    let post = null, eye = 0;
+    const twist = (k) => a.rotate('Torso_1', Y, k);
+    switch (o.s) {
+      case 'bpunch': {
+        if (t < 10) {
+          this.enter('bwind', 'windup', t);
+          const k = sm(t / 8);
+          a.play('Punch', { time: 0.28 * k });
+          const shake = Math.sin(time * 55) * 0.05 * k;
+          a.body.position.z -= 10 * k;
+          post = () => { twist(0.55 * k + shake); a.rotate('Torso_1', X, -0.2 * k); };
+          eye = 0.6 + 0.4 * Math.sin(time * 30);
+        } else {
+          this.enter('bhit', 'attack', t);
+          const u = t - 10, k = easeOut(u / 3);
+          a.play('Punch', { time: 0.3 + Math.min(1, u / 8) * 0.55 });
+          a.body.position.z += 16 * k - 16 * sm((u - 6) / 12);
+          post = () => { twist(-0.4 * k * (1 - sm((u - 5) / 12))); a.rotate('Torso_1', X, 0.15 * k * (1 - sm((u - 5) / 12))); };
+          eye = u < 8 ? 1 : 0;
+        }
+        break;
+      }
+      case 'bstomp': {
+        this.enter('bstomp', 'bstomp', t);
+        this.ground = 'none';
+        if (t < 5) {
+          a.play('Jump', { time: 0.05 + 0.2 * (t / 5) });
+          a.body.scale.set(1.06, 1 - 0.1 * sm(t / 4), 1.06);
+        } else if (t < 19) {
+          a.play('Jump', { time: 0.32 + 0.25 * sm((t - 5) / 14) });
+          post = () => { a.rotate('Torso_1', X, -0.25 + 0.5 * sm((t - 12) / 7)); };
+        } else {
+          const u = t - 19;
+          a.play('Jump', { time: 0.62 + Math.min(0.35, u * 0.03) });
+          const sq = Math.sin(clamp(u / 5, 0, 1) * Math.PI) * 0.16;
+          a.body.scale.set(1 + sq * 0.7, 1 - sq, 1 + sq * 0.7);
+          this.ground = null;
+        }
+        eye = t > 12 && t < 24 ? 1 : 0.4;
+        break;
+      }
+      case 'charge': {
+        if (t < 12) {
+          this.enter('cwind', 'cwind', t);
+          const k = sm(t / 9);
+          a.play('Running', { time: 0.1 });
+          a.body.position.z -= 8 * k;
+          post = () => { a.rotate('Torso_1', X, 0.45 * k); a.rotate('Head', X, -0.3 * k); };
+          eye = 0.5 + 0.5 * Math.sin(time * 40);
+        } else if (t < 35) {
+          this.enter('charge', 'charge', t);
+          a.play('Running', { speed: dt ? 2.2 : 0 });
+          post = () => { a.rotate('Torso_1', X, 0.55); a.rotate('Head', X, -0.35); };
+          eye = 1;
+        } else {
+          this.enter('brec', 'recover', t);
+          a.play('Idle', { speed: dt ? 1 : 0 });
+          const k = 1 - sm((t - 35) / 10);
+          post = () => a.rotate('Torso_1', X, 0.4 * k);
+        }
+        break;
+      }
+      case 'cast': {
+        // 扔扳手：右手从身后抡过头顶甩出（13 tick 出手）
+        this.enter('bcast', 'cast', t);
+        a.play('Punch', { time: t < 13 ? 0.12 : 0.3 + Math.min(1, (t - 13) / 8) * 0.5 });
+        const up = sm(t / 10) * (1 - sm((t - 12) / 2.5)), fl = sm((t - 12) / 3) * (1 - sm((t - 20) / 9));
+        post = () => {
+          twist(0.5 * up - 0.45 * fl);
+          a.rotate('Torso_1', X, -0.25 * up + 0.25 * fl);
+          a.aim('UpperArmR', 'LowerArmR', lerpDir(V(-0.3, 0.7, -0.65), V(-0.1, 0.1, 1), fl), Math.max(up, fl));
+          a.aim('LowerArmR', 'Palm2R', lerpDir(V(-0.1, 0.95, -0.2), V(0, 0, 1), fl), Math.max(up, fl));
+        };
+        if (a.wrenchHeld) a.wrenchHeld.visible = t < 13;
+        eye = t > 10 && t < 16 ? 1 : 0;
+        break;
+      }
+      case 'special': {
+        // 超频连锤：左右交替的高速直拳（每 4 tick 一拳），最后一记上冲重拳
+        this.enter('bsup', 'special', t);
+        eye = 1;
+        if (t < 6) {
+          a.play('Idle', { time: 0.2 });
+          const k = sm(t / 5);
+          post = () => { a.rotate('Torso_1', X, -0.25 * k); a.rotate('Head', X, -0.3 * k); };
+          a.body.scale.setScalar(1 + 0.05 * Math.sin(time * 60) * k);
+        } else if (t < 32) {
+          const ph = ((t - 6) % 4) / 4, side = Math.floor((t - 6) / 4) % 2 ? 1 : -1;
+          a.play('Punch', { time: 0.3 + 0.45 * Math.sin(ph * Math.PI) });
+          a.body.position.z += 8 * Math.sin(ph * Math.PI);
+          post = () => { twist(side * 0.45 * Math.sin(ph * Math.PI)); a.rotate('Torso_1', X, 0.12); };
+        } else {
+          const u = t - 32, k = sm(u / 3) * (1 - sm((u - 6) / 6));
+          a.play('Punch', { time: 0.3 + Math.min(1, u / 6) * 0.5 });
+          a.body.position.z += 18 * k;
+          post = () => {
+            twist(-0.5 * k); a.rotate('Torso_1', X, -0.35 * k);
+            a.aim('UpperArmR', 'LowerArmR', V(-0.1, 0.75, 0.66), k);
+            a.aim('LowerArmR', 'Palm2R', V(0, 0.98, 0.2), k);
+          };
+        }
+        break;
+      }
+      case 'block': {
+        // 防御：双臂交叉护在胸前、上身后缩
+        this.enter('bblock', 'block', t);
+        a.play('Idle', { speed: dt ? 0.5 : 0 });
+        post = () => {
+          a.rotate('Torso_1', X, -0.15);
+          a.aim('UpperArmL', 'LowerArmL', V(0.35, -0.2, 0.9), 1);
+          a.aim('LowerArmL', 'Palm2L', V(-0.85, 0.45, 0.25), 1);
+          a.aim('UpperArmR', 'LowerArmR', V(-0.35, -0.1, 0.9), 1);
+          a.aim('LowerArmR', 'Palm2R', V(0.85, 0.5, 0.15), 1);
+        };
+        break;
+      }
+      case 'grab': {
+        this.enter('bgrab', 'grab', t);
+        a.play('Punch', { time: 0.4 });
+        post = () => {
+          a.aim('UpperArmL', 'LowerArmL', V(0.25, -0.1, 1), 1); a.aim('LowerArmL', 'Palm2L', V(-0.3, 0, 1), 1);
+          a.aim('UpperArmR', 'LowerArmR', V(-0.25, -0.1, 1), 1); a.aim('LowerArmR', 'Palm2R', V(0.3, 0, 1), 1);
+        };
+        break;
+      }
+      case 'throw': {
+        // 把对手抡起甩到身后
+        this.enter('bthrow', 'throw', t);
+        a.play('Punch', { time: 0.3 + Math.min(1, t / 10) * 0.5 });
+        const k = sm(t / 8) * (1 - sm((t - 10) / 8));
+        post = () => { twist(-0.9 * k); a.rotate('Torso_1', X, 0.2 * k); };
+        eye = t < 10 ? 1 : 0;
+        break;
+      }
+      case 'win':
+        this.enter('bwin', 'win', t);
+        if (t < 40) a.play('Yes', { speed: dt ? 1 : 0 });
+        else a.play('Dance', { speed: dt ? 1 : 0 });
+        eye = 0.5 + 0.5 * Math.sin(time * 8);
+        break;
+      case 'dead':
+        this.enter('bdead', 'dead', t);
+        a.play('Death', { time: 0.93 });
+        break;
+      case 'land':
+        this.enter('loco', 'idle', t);
+        a.loco('Idle', 'Walking', 0, 1, 1);
+        break;
+    }
+    a.update(dt);
+    if (post) post();
+    if (a.core) a.core.scale.setScalar(1 + 0.25 * eye + 0.08 * Math.sin(time * 9));
+    if (a.eyeMat) {
+      a.eyeMat.emissive.set(eye > 0.3 ? '#ff1a1a' : ROBOT_EYE.boss);
+      a.eyeMat.emissiveIntensity = 0.9 + eye * 1.6;
+    }
+  }
+
   robotPose(o, t, dt, time) {
     const a = this.a, type = this.id;
     const spd = o._spd || 0;
     let post = null;
     let eye = 0;
+    if (type === 'boss' && BOSS_STATES[o.s]) { this.bossPose(o, t, dt, time); return; }
     switch (o.s) {
       case 'idle': case 'walk': case 'recover': {
         this.enter('loco', o.s, t);

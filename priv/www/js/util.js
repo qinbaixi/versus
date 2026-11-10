@@ -42,8 +42,14 @@ window.NK = window.NK || {};
     },
     zed: {
       id: 'zed', cn: '泽德', color: '#4fdc6a', desc: '长距离 · 长棍压制',
-      sp5: '棍气', sp6: '奔袭刺', sp2: '劈山棍', sup: '棍影乱舞', k5: '挑天棍', run: '突刺', thr: '棍挑摔',
+      sp5: '棍气', sp6: '奔袭刺', sp2: '挑天棍', sup: '棍影乱舞', k5: '撩棍', run: '突刺', thr: '棍挑摔',
       stat: '体力 ●●●○<br>速度 ●●●○<br>距离 ●●●●',
+    },
+    // 街机关底 Boss（只由 CPU 操控，不在选人界面出现）
+    boss: {
+      id: 'boss', cn: 'OVERCLOCK', color: '#ff3040', desc: '关底 Boss · 霸体 · 不会蹲',
+      sp5: '飞旋扳手', sp6: '超载冲撞', sp2: '重踏', sup: '超频连锤', k5: '重踏', run: '', thr: '抡摔',
+      stat: '',
     },
   };
   NK.CHAR_ORDER = ['kai', 'mira', 'bruno', 'zed'];

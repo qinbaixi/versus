@@ -103,8 +103,8 @@
 
     // 名字
     const nx = side === 0 ? x0 + 4 : x0 + BAR_W - 4;
-    text(ctx, `${ch.cn} ${f.c.toUpperCase()}`, nx, BAR_Y + BAR_H + 19, { font: `italic 900 15px ${FONT_EN}`, align: side === 0 ? 'left' : 'right', color: ch.color, lw: 4 });
-    const lw = ctx.measureText(`${ch.cn} ${f.c.toUpperCase()}`).width;
+    text(ctx, (f.c === 'boss' ? ch.cn : `${ch.cn} ${f.c.toUpperCase()}`), nx, BAR_Y + BAR_H + 19, { font: `italic 900 15px ${FONT_EN}`, align: side === 0 ? 'left' : 'right', color: ch.color, lw: 4 });
+    const lw = ctx.measureText((f.c === 'boss' ? ch.cn : `${ch.cn} ${f.c.toUpperCase()}`)).width;
     text(ctx, f.n || '', nx + (side === 0 ? lw + 8 : -lw - 8), BAR_Y + BAR_H + 18, { font: `bold 12px ${FONT_CN}`, align: side === 0 ? 'left' : 'right', color: '#e8e2ff', lw: 3 });
   }
 

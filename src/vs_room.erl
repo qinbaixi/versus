@@ -45,8 +45,11 @@ handle_call({join, Conn, Name, Char, Mode0, Arg}, _From, #{sim := Sim, conns := 
             {reply, {ok, Seat, vs}, St#{sim := Sim1, conns := Conns#{Conn => Seat}, rdy := #{}}};
         {cpu, []} ->
             {CChar, Lv} = parse_cpu(Arg, Char),
-            Sim1 = vs_sim:start(vs_sim:seat(vs_sim:seat(Sim, 1, Char, Name, false), 2, CChar, cpu_name(Lv), true)),
-            {reply, {ok, 1, cpu}, St#{mode := cpu, sim := Sim1, conns := Conns#{Conn => 1}, ai := vs_ai:new(Lv, seed())}};
+            CName = case CChar of boss -> <<"关底 BOSS"/utf8>>; _ -> cpu_name(Lv) end,
+            Sim1 = vs_sim:start(vs_sim:seat(vs_sim:seat(Sim, 1, Char, Name, false), 2, CChar, CName, true)),
+            Stg = case CChar of boss -> 3; _ -> maps:get(stg, St) end,
+            {reply, {ok, 1, cpu}, St#{mode := cpu, sim := Sim1, conns := Conns#{Conn => 1}, ai := vs_ai:new(Lv, seed()),
+                                      stg := Stg}};
         {arc, []} ->
             %% 其余三人（随机顺序）→ 自己的镜像 → 关底 Boss OVERCLOCK
             Order = [C || C <- shuffle(?CHARS -- [Char])] ++ [Char, boss],
@@ -133,7 +136,7 @@ next_match(#{sim := Sim, stg := Stg} = St) ->
 arc_stage(#{arc := #{st := N, order := Order, char := Char, name := Name}} = St) ->
     CChar = lists:nth(N, Order),
     Lv = lists:nth(N, [1, 2, 3, 4, 4]),
-    CName = case CChar of boss -> <<"OVERCLOCK">>; _ -> cpu_name(Lv) end,
+    CName = case CChar of boss -> <<"关底 BOSS"/utf8>>; _ -> cpu_name(Lv) end,
     Sim = vs_sim:start(vs_sim:seat(vs_sim:seat(vs_sim:new(), 1, Char, Name, false), 2, CChar, CName, true)),
     %% Boss 战固定在厂区尽头
     Stg = case CChar of boss -> 3; _ -> maps:get(stg, St) end,
@@ -159,7 +162,7 @@ parse_cpu(Arg, Mine) ->
              L when is_integer(L), L >= 1, L =< 4 -> L;
              _ -> 2
          end,
-    Char = case [C || C <- ?CHARS, atom_to_binary(C, utf8) =:= CBin] of
+    Char = case [C || C <- ?CHARS ++ [boss], atom_to_binary(C, utf8) =:= CBin] of
                [C] -> C;
                [] -> hd(shuffle(?CHARS -- [Mine]))
            end,

@@ -128,7 +128,7 @@ function main() {
 
   const MODE_DESC = {
     cpu: '自选对手和难度，和 CPU 打一场三局两胜。',
-    arc: '依次挑战其余三人和自己的镜像，CPU 一场比一场强，输了可以原地续关。',
+    arc: '依次挑战其余三人和自己的镜像，最后迎战关底 Boss「OVERCLOCK」。CPU 一场比一场强，输了可以原地续关。',
     local: '同一台电脑两人对打：P1 用 WASD + J K L I U，P2 用方向键 + 小键盘 1 2 3 5 4（或 , . / \' ;）。',
     net: '和朋友输入相同的房间号进入同一擂台，先到的两人对打，之后进来的人观战。',
   };
@@ -253,6 +253,24 @@ function main() {
       cv.getContext('2d').drawImage(glCanvas, 0, glCanvas.height - 64 * pr, 64 * pr, 64 * pr, 0, 0, 128, 128);
       portraits[id] = cv;
     }
+    // Boss 头像：临时建一台 OVERCLOCK 拍头部特写
+    {
+      for (const a of cards) if (a.actor) { a.actor.root.visible = false; a.actor.strands.forEach((st) => st.setVisible(false)); }
+      const r = Chars.createRobot('boss', cardScene);
+      cardScene.add(r.root);
+      new Anim(r).update({ s: 'idle', t: 0, f: 1, z: 0, a: '' }, 0, 0.016, 0);
+      r.face(0.35, 1, 100);
+      const hp = r.bones.Head.getWorldPosition(new THREE.Vector3());
+      cam.position.set(hp.x + 10, hp.y + 24, hp.z + 95);
+      cam.lookAt(hp.x, hp.y + 20, hp.z);
+      renderer.setViewport(0, 0, 64, 64); renderer.setScissor(0, 0, 64, 64);
+      renderer.setClearColor(0x000000, 0); renderer.clear();
+      renderer.render(cardScene, cam);
+      const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+      cv.getContext('2d').drawImage(glCanvas, 0, glCanvas.height - 64 * pr, 64 * pr, 64 * pr, 0, 0, 128, 128);
+      portraits.boss = cv;
+      r.dispose();
+    }
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, W * scale, H * scale);
   }
@@ -291,7 +309,9 @@ function main() {
       ping(slot, ms) { G.pings[slot] = ms; },
     };
     const mk = (slot, room, mode, arg) => { const c = new NK.Conn(slot, names[slot], sel[slot], room, mode, arg, handlers); G.conns.push(c); c.connect(); };
-    if (lobbyMode === 'cpu') mk(0, 'c-' + rnd4(), 'cpu', `${rnd ? 'random' : sel[1]}:${lv}`);
+    // 地址栏加 ?cpu=boss 可以在“对战 CPU”里直接练 Boss（调试 / 练习用）
+    const forced = new URLSearchParams(location.search).get('cpu');
+    if (lobbyMode === 'cpu') mk(0, 'c-' + rnd4(), 'cpu', `${forced || (rnd ? 'random' : sel[1])}:${lv}`);
     else if (lobbyMode === 'arc') mk(0, 'a-' + rnd4(), 'arc', '');
     else if (lobbyMode === 'local') { const r = 'l-' + rnd4(); mk(0, r, 'vs', ''); setTimeout(() => { if (G.mode === 'game' && G.conns.length === 1) mk(1, r, 'vs', ''); }, 150); }
     else mk(0, 'n-' + code, 'vs', '');
@@ -485,9 +505,10 @@ function main() {
     let e = G.actors.get(seat);
     if (e && e.type !== type) { disposeEnt(e); G.actors.delete(seat); e = null; }
     if (!e) {
-      const actor = Chars.createHero(type, scene);
+      const boss = type === 'boss';
+      const actor = boss ? Chars.createRobot('boss', scene) : Chars.createHero(type, scene);
       scene.add(actor.root);
-      e = { actor, brain: new Anim(actor), shadow: makeBlob(), type, h: Chars.HERO_H };
+      e = { actor, brain: new Anim(actor), shadow: makeBlob(), type, h: boss ? Chars.HERO_H * 1.6 : Chars.HERO_H };
       G.actors.set(seat, e);
     }
     return e;
@@ -579,11 +600,36 @@ function main() {
         vfx.loopFx(key + 'g', 'mira_wind_ring', { x, y: y - 18, z: Z3 + 4, scale: 0.3 });
       } else if (j.c === 'zed') {
         vfx.loopFx(key, 'zed_thrust', { x: x - f * 60, y, z: Z3 + 6, scale: 0.42, flipX: f < 0 });
+      } else if (j.c === 'boss') {
+        // OVERCLOCK 的飞旋扳手：真实的 3D 扳手绕纵深轴高速旋转，带红色电光
+        const w = wrenchFor(j.i);
+        w.position.set(x, y, Z3 + 10);
+        w.rotation.z = -f * performance.now() * 0.025;
+        w.userData.seen = true;
+        vfx.loopFx(key + 'g', 'super_flash', { x, y, z: Z3 + 8, scale: 0.26, tint: '#ff3040' });
       } else {
         vfx.loopFx(key, 'bruno_dust_blast', { x, y: gy, z: Z3 + 6, scale: 0.42 });
         if (Math.random() < 0.5) vfx.dustPuff(new THREE.Vector3(x - f * 14, gy, Z3), 1);
         vfx.loopFx(key + 'g', 'super_flash', { x, y: gy + 10, z: Z3 + 8, scale: 0.22, tint: '#ffb340' });
       }
+    }
+  }
+
+  const wrenches = new Map();
+  function wrenchFor(id) {
+    let w = wrenches.get(id);
+    if (!w) {
+      w = Chars.makeWrench(true);
+      w.scale.setScalar(16);
+      scene.add(w);
+      wrenches.set(id, w);
+    }
+    return w;
+  }
+  function sweepWrenches() {
+    for (const [id, w] of wrenches) {
+      if (!w.userData.seen) { w.removeFromParent(); wrenches.delete(id); }
+      else w.userData.seen = false;
     }
   }
 
@@ -666,6 +712,7 @@ function main() {
     // 必杀演出需要世界坐标
     supers.update(fighters.map((o) => { const e = G.actors.get(o.i); return e && { o: { ...o, x: o.x + x0 }, e, t: e.t }; }).filter(Boolean), dt, now, time);
     drawProjectiles(fr, gy);
+    sweepWrenches();
     drawItem(fr, gy, time);
     vfx.update(dt);
     for (const [seat, e] of G.actors) if (!seen.has(seat)) { disposeEnt(e); G.actors.delete(seat); }
@@ -750,7 +797,7 @@ function main() {
     }
     renderPortraits();
     // 预热：把四名角色各渲染一次，提前编译着色器
-    const warm = NK.CHAR_ORDER.map((id) => Chars.createHero(id, scene));
+    const warm = NK.CHAR_ORDER.map((id) => Chars.createHero(id, scene)).concat([Chars.createRobot('boss', scene)]);
     warm.forEach((a, i) => { a.root.position.set(X0() + 300 + i * 60, 0, Z3); scene.add(a.root); });
     placeCamera(500, 800, 0, 0);
     renderer.compile(scene, camera);

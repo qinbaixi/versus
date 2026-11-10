@@ -409,7 +409,7 @@ export const ROBOT_DEFS = {
   spark:   { h: 68, wide: 0.95, main: '#ff7a1a', grey: '#ffd08a', black: '#2a1408', eye: '#ffe14a' },
   brute:   { h: 112, wide: 1.32, main: '#34343f', grey: '#5c5c70', black: '#0d0d12', eye: '#7dff4a' },
   thrower: { h: 86, wide: 1.0,  main: '#3f8f6a', grey: '#a4c8a0', black: '#122018', eye: '#ff9df0' },
-  boss:    { h: 184, wide: 1.12, main: '#3a1f3f', grey: '#d8a83a', black: '#0e0a14', eye: '#ff3030' },
+  boss:    { h: 130, wide: 1.12, main: '#3a1f3f', grey: '#d8a83a', black: '#0e0a14', eye: '#ff3030' },
 };
 let robotH = 0;
 

@@ -62,6 +62,10 @@ export class Supers {
       } else if (c === 'bruno') {
         if (V.has('hit_heavy')) V.spawn('hit_heavy', { x: p.x, y: p.y + 10, z: p.z, scale: 1.25, rotation: f > 0 ? 0.9 : -0.9 });
         V.dustPuff(_q.set(ev.x + f * 10, gy, z3), 2, f * 12);
+      } else if (ev.m === 'zsp2') {
+        // 挑天棍：一道从脚下竖着抡上头顶的棍影大弧 + 上升风环
+        if (V.has('zed_staff_disc')) { const d = V.fb.getFlipbookDef('zed_staff_disc'); V.spawn('zed_staff_disc', { x: ev.x + f * 30, y: gy + 70, z: z3 + 8, scale: 190 / d.size, flipX: f < 0, rotation: f * 1.5, duration: 0.26 }); }
+        if (V.has('mira_wind_ring')) V.spawn('mira_wind_ring', { x: ev.x + f * 30, y: gy + 20, z: z3 + 6, scale: 0.55, tint: '#4fdc6a', duration: 0.35 });
       } else {
         if (V.has('zed_staff_disc')) { const d = V.fb.getFlipbookDef('zed_staff_disc'); V.spawn('zed_staff_disc', { x: ev.x + f * 22, y: gy + 40, z: z3 + 8, scale: 120 / d.size, flipX: f < 0, duration: 0.22 }); }
       }
@@ -76,7 +80,7 @@ export class Supers {
     const V = this.vfx, K = this.K;
     const z3 = ev.y * K, gy = this.groundAt(z3);
     _g.set(ev.x, gy, z3);
-    V.quakeRing(_g, 100, 34 * K, false);
+    V.quakeRing(_g, ev.r && ev.r > 60 ? ev.r : 100, 34 * K, false);
     V.crackDecal(_g, 80, 50);
     V.dustPuff(_q.set(ev.x - 22, gy, z3), 1);
     V.dustPuff(_q.set(ev.x + 22, gy, z3), 1);

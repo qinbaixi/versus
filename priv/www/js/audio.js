@@ -204,6 +204,19 @@
       tone({ type: 'sawtooth', f0: 1600, f1: 220, dur: 0.24, vol: 0.12, lp: 6000, lp1: 800, at: T(22) });
       tone({ type: 'sine', f0: 150, f1: 60, dur: 0.22, vol: 0.5, at: T(24) });
     },
+    /** OVERCLOCK「超频连锤」：电机过载的升调嗡鸣 → 每 4 tick 一记金属重击 → 34 tick 上冲重拳 */
+    super_boss() {
+      const t = A.ctx.currentTime, T = (k) => t + k / 30;
+      cutin(t, -8);
+      tone({ type: 'sawtooth', f0: 55, f1: 440, dur: 0.6, vol: 0.2, lp: 600, lp1: 3000, vib: 40, vibAmt: 25, at: t });
+      tone({ type: 'square', f0: 110, f1: 880, dur: 0.6, vol: 0.06, lp: 2000, at: t });
+      for (let k = 6, i = 0; k < 32; k += 4, i++) {
+        noise({ ft: 'bandpass', f0: 900 + i * 60, f1: 300, q: 4, dur: 0.07, vol: 0.32, at: T(k + 1) });
+        tone({ type: 'square', f0: 220 + i * 18, f1: 90, dur: 0.06, vol: 0.1, lp: 1800, at: T(k + 1) });
+      }
+      tone({ type: 'sine', f0: 170, f1: 36, dur: 0.5, vol: 0.85, at: T(34) });
+      noise({ ft: 'lowpass', f0: 5000, f1: 240, dur: 0.42, vol: 0.6, at: T(34) });
+    },
     /** 震地冲击波：超低频轰击 + 碎石滚动 */
     quake() {
       const t = A.ctx.currentTime;
