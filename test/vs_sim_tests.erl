@@ -156,9 +156,9 @@ bruno_lift_throw_test() ->
 boss_cannot_block_low_test() ->
     S = close_up(fresh(kai, boss)),
     Low = seq(S, [{?D bor ?K, ?R bor ?D, 1}, {?D, ?R bor ?D, 12}]),
-    ?assert(hp(Low, 2) < 1450),
+    ?assert(hp(Low, 2) < 1600),
     Mid = seq(S, [{?P, ?R, 1}, {0, ?R, 8}]),
-    ?assertEqual(1450, hp(Mid, 2)).
+    ?assertEqual(1600, hp(Mid, 2)).
 
 %% Boss 的重拳带霸体：被轻拳打中也不会中断
 boss_punch_armor_test() ->
@@ -173,3 +173,13 @@ boss_not_launchable_test() ->
     S = close_up(fresh(kai, boss)),
     S1 = seq(S, [{?K, 0, 1}, {0, 0, 6}]),
     ?assertEqual(hurt, maps:get(s, f(S1, 2))).
+
+%% 浮空连段：地面 J J K 挑空 → 跳追 → 空中 J J J → K，能连上 7 下以上；但一套最多打掉约 30% 血
+air_combo_test() ->
+    S = run(fresh(kai, mira), ?R, 0, 40),
+    Plan = [{?P, 1}, {0, 5}, {?P, 1}, {0, 5}, {?K, 1}, {0, 11}, {?U, 3}, {0, 7},
+            {?P, 1}, {0, 5}, {?P, 1}, {0, 5}, {?P, 1}, {0, 5}, {?K, 1}, {0, 60}],
+    S1 = seq(S, [{M, 0, N} || {M, N} <- Plan]),
+    Lost = 900 - hp(S1, 2),
+    ?assert(Lost >= 200),
+    ?assert(Lost =< 900 * 0.3 + 70).

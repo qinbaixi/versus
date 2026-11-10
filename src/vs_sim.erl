@@ -18,7 +18,11 @@
 -define(INTRO_TICKS, 80).
 -define(KO_TICKS, 110).
 -define(ITEM_AT, 600).
--define(JUGGLE_MAX, 5).
+-define(JUGGLE_MAX, 7).       %% 一套浮空最多追打几下
+-define(JUGGLE_DMG, 0.3).     %% 一套浮空最多打掉最大血量的 30%
+-define(JUGGLE_TICKS, 70).    %% 一套浮空最长约 2.3 秒
+-define(AIR_GRAV, 0.7).     %% 被挑空 / 空中追打时的下落重力（比跳跃轻，浮空更久，参考 DNF 的“托住”手感）
+-define(KD_GRAV, 0.78).      %% 被击飞时的重力
 
 -define(LEFT, 1).
 -define(RIGHT, 2).
@@ -38,7 +42,7 @@ stats(mira)  -> #{spd => 5.2, hp => 900,  pow => 0.85, reach => 54, quick => -2,
 stats(bruno) -> #{spd => 3.4, hp => 1150, pow => 1.25, reach => 60, quick => 2,  thr => 150};
 stats(zed)   -> #{spd => 4.0, hp => 950,  pow => 0.95, reach => 82, quick => 1,  thr => 105};
 %% 街机关底 Boss「OVERCLOCK」：只由 CPU 操控。体型大、血厚、出招带霸体；不会蹲、不会跳（下段打得到它）
-stats(boss)  -> #{spd => 3.0, hp => 1450, pow => 1.1, reach => 72, quick => 2,  thr => 160}.
+stats(boss)  -> #{spd => 3.0, hp => 1600, pow => 1.1, reach => 72, quick => 2,  thr => 160}.
 
 super_len(kai) -> 38;
 super_len(mira) -> 40;
@@ -268,13 +272,25 @@ st(jump, #{t := T, z := Z} = F0, _O, _S) ->
                 {true, _} -> start_slam(use(F0, ?KICK), air);
                 {_, true} ->
                     F = air_move(use(F0, ?PUNCH)),
-                    {F#{s := jattack, t := 0, hit := [], con := false, mv := jp}, [sfx(swing)]};
+                    {F#{s := jattack, t := 0, hit := [], con := false, mv := jp, cb := 1}, [sfx(swing)]};
                 _ -> land_check(air_move(F0), 0)
             end;
         false -> land_check(air_move(F0), 0)
     end;
-st(jattack, F, _O, _S) ->
-    land_check(air_move(F), 2);
+st(jattack, #{t := T, con := Con, cb := Cb, z := Z} = F0, _O, _S) ->
+    %% 空中连段：打中后 J 可以再出一招（最多三段），K 接坠击把对手砸到地上反弹
+    Chain = Con andalso T >= 4 andalso Z > 10,
+    if
+        Chain, Cb < 3 ->
+            case pressed(F0, ?PUNCH) of
+                true ->
+                    F = air_move(use(F0, ?PUNCH)),
+                    {F#{t := 0, hit := [], con := false, cb := Cb + 1}, [sfx(swing)]};
+                false -> jattack_k(F0)
+            end;
+        Chain -> jattack_k(F0);
+        true -> land_check(air_move(F0), 2)
+    end;
 st(land, #{t := T, stun := Stun} = F, _O, _S) ->
     case T >= 4 + Stun of
         true -> {to_idle(F), []};
@@ -336,13 +352,15 @@ st(launch, #{mv := zsp2, t := T, x := X, f := Face, con := Con} = F, _O, _S) ->
             end;
         false -> zsp2_end(F1, T)
     end;
-st(launch, #{t := T, con := Con} = F, _O, _S) ->
-    case T >= 7 andalso Con of
+st(launch, #{t := T, con := Con, x := X0, f := Face0} = F0, _O, _S) ->
+    %% 重击带一个小踏步，连段里接得上
+    F = case T =< 4 of true -> F0#{x := X0 + Face0 * 3.0}; false -> F0 end,
+    case T >= 6 andalso Con of
         true ->
-            case pressed(F, ?UP) of
-                true -> start_jump((use(F, ?UP))#{run := false});
+            case pressed(F, ?UP) orelse held(F, ?UP) of
+                true -> chase_jump((use(F, ?UP))#{run := false});
                 false ->
-                    case actions(F, [super, special]) of
+                    case actions(F, [super, special, punch]) of
                         none -> finish(F, T, 22);
                         R -> R
                     end
@@ -419,13 +437,15 @@ st(hurt, #{stun := Stun, x := X, kb := Kb} = F, _O, _S) ->
         false -> {F#{stun := Stun - 1, x := X + Kb, kb := Kb * 0.8}, []}
     end;
 st(St, #{x := X, z := Z, vx := Vx, vz := Vz, hp := Hp} = F, _O, _S) when St =:= air; St =:= knockdown ->
-    Vz1 = Vz - 0.95, Z1 = Z + Vz1,
+    G = case St of air -> ?AIR_GRAV; knockdown -> ?KD_GRAV end,
+    Vz1 = Vz - G, Z1 = Z + Vz1,
+    F1 = F#{jt => maps:get(jt, F, 0) + 1},
     case Z1 =< 0 of
         true ->
             Next = case Hp =< 0 of true -> dead; false -> down end,
             {F#{s := Next, t := 0, z := 0.0, vz := 0.0, vx := 0.0, x := X + Vx, mv := St},
              [sfx(land), #{k => dust, x => X + Vx}]};
-        false -> {F#{x := X + Vx, z := Z1, vz := Vz1}, []}
+        false -> {F1#{x := X + Vx, z := Z1, vz := Vz1}, []}
     end;
 st(down, #{t := T, mv := From} = F, _O, _S) ->
     case T >= (case From of air -> 12; _ -> 18 end) of
@@ -524,6 +544,23 @@ start_jump(#{c := C, f := Face, run := Run} = F) ->
     Fw = fwd(F),
     Mul = if Run, Fw > 0 -> 1.7; Fw < 0 -> 0.85; true -> 1.0 end,
     {F#{s := jump, t := 0, vz := 13.0, vx := Fw * Face * Spd * Mul, z := 0.0, run := false,
+        hit := [], con := false, mv := none, cb := 0}, [sfx(jump)]}.
+
+%% ---- （辅助）空中连段里按 K / 必杀
+jattack_k(F) ->
+    case pressed(F, ?KICK) of
+        true -> start_slam(use(F, ?KICK), air);
+        false ->
+            case actions(F, [super]) of
+                none -> land_check(air_move(F), 2);
+                R -> R
+            end
+    end.
+
+%% 挑空后的追击跳：跳得更高、自动朝对手方向，方便接空中连段
+chase_jump(#{c := C, f := Face} = F) ->
+    #{spd := Spd} = stats(C),
+    {F#{s := jump, t := 0, vz := 15.0, vx := Face * Spd * 0.9, z := 0.0, run := false,
         hit := [], con := false, mv := none, cb := 0}, [sfx(jump)]}.
 
 %% 按优先级尝试出招：必杀 > 投 > 技 > 踢 > 拳
@@ -716,8 +753,8 @@ box(#{s := attack, cb := Cb, t := T, c := C}) ->
     #{reach := R, pow := P} = stats(C),
     case Cb of
         3 when T >= 4, T =< 7 -> bx({atk, 3}, -10, R + 14, 20, 100, 80 * P, mid, kd, 0, 12, 7, false, true);
-        2 when T >= 3, T =< 4 -> bx({atk, 2}, -10, R + 6, 30, 95, 50 * P, mid, hit, 13, 9, 4, false, false);
-        1 when T >= 3, T =< 4 -> bx({atk, 1}, -10, R, 30, 95, 40 * P, mid, hit, 12, 8, 4, false, false);
+        2 when T >= 3, T =< 4 -> bx({atk, 2}, -10, R + 6, 30, 95, 50 * P, mid, hit, 14, 9, 2, false, false);
+        1 when T >= 3, T =< 4 -> bx({atk, 1}, -10, R, 30, 95, 40 * P, mid, hit, 13, 8, 2, false, false);
         _ -> none
     end;
 box(#{s := cjab, t := T, c := C}) when T >= 2, T =< 3 ->
@@ -735,10 +772,10 @@ box(#{s := launch, mv := zsp2, t := T, c := C}) when T >= 3, T =< 9 ->
     bx(zsp2, -24, R + 18, 0, 215, 105 * P, mid, launch, 0, 12, 5, true, true);
 box(#{s := launch, mv := k5, t := T, c := C}) when T >= 3, T =< 6 ->
     #{reach := R, pow := P} = stats(C),
-    bx(k5, -10, R + 4, 20, 140, 90 * P, mid, launch, 0, 9, 6, false, true);
-box(#{s := jattack, t := T, c := C}) when T >= 2 ->
+    bx(k5, -10, R + 14, 20, 140, 90 * P, mid, launch, 0, 9, 6, false, true);
+box(#{s := jattack, t := T, c := C, cb := Cb}) when T >= 2 ->
     #{reach := R, pow := P} = stats(C),
-    bx(jp, -10, R + 6, -18, 48, 60 * P, over, hit, 14, 10, 4, false, false);
+    bx({jp, Cb}, -10, R + 6, -18, 48, case Cb of 3 -> 55; _ -> 45 end * P, over, hit, 14, 10, 4, false, false);
 box(#{s := slam, vz := Vz, c := C, mv := Mv}) when Vz < 0 ->
     #{reach := R, pow := P} = stats(C),
     {Dmg, Ext} = case {C, Mv} of
@@ -936,7 +973,12 @@ struck1(#{hc := Hc0} = A, #{x := VX, hp := Hp, jc := Jc, armor := Armor, s := VS
             Dead = Hp1 =< 0,
             V0 = (gain(V, Dmg * 0.06))#{hp := Hp1, t := 0, hs := Hs, mv := none, hit := [], con := false,
                                         cb := 0, armor := 0, run := false, stun := 0, kb := 0.0},
-            Capped = Jc >= ?JUGGLE_MAX andalso not Sup,
+            %% 防止被一套连死：追打次数、浮空总时长、这套浮空累计伤害任一到上限就强制击落
+            InAir = VS =:= air,
+            Jd = case InAir of true -> maps:get(jd, V, 0) + Dmg; false -> Dmg end,
+            Jt = case InAir of true -> maps:get(jt, V, 0); false -> 0 end,
+            Capped = not Sup andalso (Jc >= ?JUGGLE_MAX orelse Jt >= ?JUGGLE_TICKS
+                                      orelse (InAir andalso Jd >= ?JUGGLE_DMG * maps:get(mhp, V))),
             V1 = if
                      Dead -> V0#{s := knockdown, vz := 9.0, vx := Dir * 6.0, z := max(maps:get(z, V0), 4.0)};
                      Kind =:= lift ->
@@ -944,23 +986,32 @@ struck1(#{hc := Hc0} = A, #{x := VX, hp := Hp, jc := Jc, armor := Armor, s := VS
                              z := max(maps:get(z, V0), 6.0)};
                      Kind =:= drag ->
                          V0#{s := hurt, stun := Hst, kb := AF * 5.2, z := 0.0, vz := 0.0};
+                     Air, not Capped, not Sup, Kind =:= kd ->
+                         %% 空中被重击：再托高一截继续浮空（而不是直接打落），追打上限内都能接
+                         V0#{s := air, vz := 6.5 - Jc * 0.4, vx := Dir * 2.4, jc := Jc + 1};
                      Kind =:= kd; Capped ->
-                         V0#{s := knockdown, vz := 7.5, vx := Dir * 6.0, z := max(maps:get(z, V0), 4.0)};
+                         V0#{s := knockdown, vz := 8.5, vx := Dir * 5.5, z := max(maps:get(z, V0), 4.0)};
                      Kind =:= trip ->
                          V0#{s := knockdown, vz := 5.0, vx := Dir * 3.0, z := max(maps:get(z, V0), 3.0)};
                      Kind =:= launch ->
-                         V0#{s := air, vz := 12.5 - Jc * 0.8, vx := Dir * 1.4, z := max(maps:get(z, V0), 4.0), jc := Jc + 1};
+                         V0#{s := air, vz := 11.0 - Jc * 0.6, vx := Dir * 1.0, z := max(maps:get(z, V0), 4.0), jc := Jc + 1};
                      Kind =:= bounce ->
-                         V0#{s := air, vz := 9.0 - Jc * 0.5, vx := Dir * 1.6, z := max(maps:get(z, V0), 4.0), jc := Jc + 1};
+                         V0#{s := air, vz := 8.5 - Jc * 0.4, vx := Dir * 1.2, z := max(maps:get(z, V0), 4.0), jc := Jc + 1};
                      Air ->
-                         V0#{s := air, vz := 7.5 - Jc * 0.5, vx := Dir * 2.2, jc := Jc + 1};
+                         %% 空中普通命中：托住对手（向上的速度至少 5），只往后飘一点，方便连续追打
+                         V0#{s := air, vz := max(5.0 - Jc * 0.3, 2.5), vx := Dir * 1.0, jc := Jc + 1};
                      true ->
                          V0#{s := hurt, stun := Hst, kb := Dir * Push * 1.0, z := 0.0, vz := 0.0}
                  end,
-            A1 = (gain(A, Dmg * 0.1))#{hs := Hs, hc := Hc},
-            A2 = case maps:get(s, V1) of hurt -> corner(A1, V1, Dir, Push); _ -> A1 end,
-            {A2, V1, HitEv ++ case Dead of true -> [#{k => ko, x => VX, z => PZ}]; false -> [] end}
+            V2 = V1#{jd => Jd, jt => Jt},
+            A1 = hang((gain(A, Dmg * 0.1))#{hs := Hs, hc := Hc}),
+            A2 = case maps:get(s, V2) of hurt -> corner(A1, V2, Dir, Push); _ -> A1 end,
+            {A2, V2, HitEv ++ case Dead of true -> [#{k => ko, x => VX, z => PZ}]; false -> [] end}
     end.
+
+%% 空中打中人时攻击方在空中“停一下”（不再下落），空中连段才接得上
+hang(#{s := jattack, vz := Vz} = A) -> A#{vz := max(Vz, 3.0)};
+hang(A) -> A.
 
 stop_rush(#{s := St} = A) when St =:= dash; St =:= runatk; St =:= charge -> A#{vx := 0.0};
 stop_rush(A) -> A.

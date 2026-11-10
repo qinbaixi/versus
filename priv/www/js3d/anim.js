@@ -992,10 +992,14 @@ export class Anim {
       }
       case 'air': {
         // 浮空（被挑空 / 追打）：仰面腾空，随时间轻微翻滚
-        this.enter('air', 'air', t);
+        // 空中追打时 t 会被每一击重置：用自己累计的浮空时间驱动翻滚，身体不会每挨一下就“弹回站直”
+        if (this.prevS !== 'air') { this.airT = 0; this.enter('air', 'air', t); }
+        this.airT = (this.airT || 0) + dt * 30;
+        const at = this.airT;
         a.play('Hit_Knockback', { time: 0.3 });
-        a.body.rotation.x = -0.75 * sm(t / 3) - 0.22 * Math.sin(t * 0.3);
+        a.body.rotation.x = -0.75 * sm(at / 3) - 0.22 * Math.sin(at * 0.3) - (t < 2 ? 0.18 * (1 - t / 2) : 0);   // 每挨一下再往后一仰
         this.ground = 'none';
+        this.key = 'air'; this.st = 'air'; this.lastT = t;
         break;
       }
       case 'win': {
