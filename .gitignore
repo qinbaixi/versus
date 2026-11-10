@@ -1,0 +1,14 @@
+_build/
+_checkouts/
+rebar3.crashdump
+erl_crash.dump
+*.beam
+tools/
+
+# Blender modelling scripts + .blend sources are committed
+!tools/
+tools/*
+!tools/blender/
+__pycache__/
+*.blend1
+rebar.lock

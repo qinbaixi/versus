@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>霓虹铁拳：对决 · Neon Knuckles Versus</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/three.module.min.js", "three/addons/": "./vendor/three/addons/" } }
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="stage">
+  <canvas id="game" width="960" height="540"></canvas>
+
+  <!-- ===== 大厅 ===== -->
+  <div id="lobby" class="overlay">
+    <div class="logo">
+      <div class="logo-en">NEON<span>KNUCKLES</span><em>VERSUS</em></div>
+      <div class="logo-cn">霓 虹 铁 拳 ： 对 决</div>
+    </div>
+
+    <div id="modes">
+      <button data-mode="cpu">对战 CPU</button>
+      <button data-mode="arc">街机闯关</button>
+      <button data-mode="local">本地双人</button>
+      <button data-mode="net">联机对战</button>
+    </div>
+    <div id="modeDesc"></div>
+
+    <div class="prow" id="prow1">
+      <div class="ptag p1">P1</div>
+      <div class="side">
+        <label class="name">名字 <input id="name1" maxlength="12" autocomplete="off" placeholder="玩家1"></label>
+        <label class="name hidden" id="netRow">房间号 <input id="room" maxlength="16" value="1" autocomplete="off"></label>
+      </div>
+      <div class="chars" data-player="0"></div>
+    </div>
+
+    <div class="prow" id="prow2">
+      <div class="ptag p2" id="p2tag">P2</div>
+      <div class="side">
+        <label class="name" id="name2wrap">名字 <input id="name2" maxlength="12" autocomplete="off" placeholder="玩家2"></label>
+        <div id="cpuOpts">
+          <label class="name">难度
+            <select id="level">
+              <option value="1">新手</option>
+              <option value="2" selected>普通</option>
+              <option value="3">困难</option>
+              <option value="4">高手</option>
+            </select>
+          </label>
+          <label class="chk small"><input type="checkbox" id="rndCpu" checked> 随机对手</label>
+        </div>
+      </div>
+      <div class="chars" data-player="1"></div>
+    </div>
+
+    <button id="startBtn">开战</button>
+
+    <div class="help">
+      <b>P1</b> A/D 移动 · W 跳 · S 蹲 · 按住后方向 = 防御 · J 拳 · K 踢 · L 技 · I 投 · U 必杀 &nbsp;|&nbsp; <b>H</b> 出招表 · <b>M</b> 音乐
+    </div>
+  </div>
+
+  <!-- ===== 游戏中：操作说明（H 键 / ? 按钮）===== -->
+  <button id="helpBtn" class="hidden" title="操作说明 (H)">?</button>
+  <div id="helpBox" class="overlay hidden">
+    <div class="help-panel">
+      <div class="help-title">出招表 <small>COMMAND LIST</small></div>
+      <table>
+        <tr><th></th><th>P1 键盘</th><th>P2 键盘</th><th>手柄</th></tr>
+        <tr><td>移动 / 跳 / 蹲</td><td><kbd>A</kbd><kbd>D</kbd> / <kbd>W</kbd> / <kbd>S</kbd></td><td>方向键</td><td>左摇杆 / 十字键</td></tr>
+        <tr><td>拳 <i>连按三段</i></td><td><kbd>J</kbd></td><td><kbd>1</kbd> 或 <kbd>,</kbd></td><td><kbd>X</kbd></td></tr>
+        <tr><td>踢 <i>挑空；蹲下 = 扫腿</i></td><td><kbd>K</kbd></td><td><kbd>2</kbd> 或 <kbd>.</kbd></td><td><kbd>A</kbd></td></tr>
+        <tr><td>技 <i>配合方向出三种特殊技</i></td><td><kbd>L</kbd></td><td><kbd>3</kbd> 或 <kbd>/</kbd></td><td><kbd>B</kbd></td></tr>
+        <tr><td>投 <i>贴身；被投瞬间按投可拆</i></td><td><kbd>I</kbd></td><td><kbd>5</kbd> 或 <kbd>'</kbd></td><td><kbd>Y</kbd></td></tr>
+        <tr><td>必杀 <i>能量满 100</i></td><td><kbd>U</kbd></td><td><kbd>4</kbd> 或 <kbd>;</kbd></td><td><kbd>RB</kbd></td></tr>
+      </table>
+      <table class="moves">
+        <tr><th>角色</th><th>技</th><th>前 + 技</th><th>下 + 技</th><th>必杀</th></tr>
+        <tbody id="moveRows"></tbody>
+      </table>
+      <ul>
+        <li><b>防御</b>：按住远离对手的方向。站防挡不住<b>下段</b>（扫腿、滑铲），蹲防（斜后下）挡不住<b>跳攻击</b>；投技不能防。</li>
+        <li><b>疾走 / 后撤</b>：快速双击前 / 后。疾走中按拳 = 冲刺攻击。</li>
+        <li><b>空中</b>：跳起后按拳 = 跳攻击，按踢 = 下砸。</li>
+        <li><b>连段</b>：<kbd>J</kbd><kbd>J</kbd> 命中后接 <kbd>K</kbd> 挑空，再跳起追打；命中后可立刻取消成特殊技或必杀。</li>
+        <li><b>能量</b>：打中、被打、出招都会涨；场地中途落下的<b>霓虹核心</b>可以抢，立得 50 能量。</li>
+        <li><b>胜负</b>：三局两胜，每局 60 秒，时间到血多者胜。结束后按拳再来一场。<kbd>M</kbd> 音乐 <kbd>H</kbd> 本说明</li>
+      </ul>
+      <div class="help-foot">按 <kbd>H</kbd> / <kbd>Esc</kbd> 或点击任意处关闭</div>
+    </div>
+  </div>
+
+  <!-- ===== 错误 / 断线 ===== -->
+  <div id="errorBox" class="overlay hidden">
+    <div class="err-panel">
+      <div class="err-title">连接出错</div>
+      <div id="errorMsg" class="err-msg"></div>
+      <button id="backBtn">返回大厅</button>
+    </div>
+  </div>
+</div>
+
+<!-- 经典脚本（全局 NK）：工具/网络/输入/音频/HUD；之后由 ES 模块 js3d/main.js 负责 3D 渲染与主循环 -->
+<script src="js/util.js"></script>
+<script src="js/net.js"></script>
+<script src="js/input.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/hud.js"></script>
+<script type="module" src="js3d/main.js"></script>
+</body>
+</html>

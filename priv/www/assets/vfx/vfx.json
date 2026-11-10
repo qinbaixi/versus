@@ -1,0 +1,297 @@
+{
+ "_format": {
+  "alpha": "premultiplied",
+  "colorSpace": "sRGB (sample raw, composite in display space)",
+  "layout": "frame k = variant*frames + f at col k%cols, row floor(k/cols), row 0 = top of image",
+  "generator": "tools/blender/vfx (Blender 4.0 Mantaflow / particles / Cycles) + pack.py"
+ },
+ "bruno_crack": {
+  "file": "bruno_crack.webp",
+  "cols": 2,
+  "rows": 1,
+  "frames": 1,
+  "variants": 2,
+  "fps": 1,
+  "blending": "normal",
+  "loop": false,
+  "size": 300,
+  "aspect": 1.0,
+  "pivot": [
+   0.5,
+   0.5
+  ],
+  "billboard": false,
+  "use": "bruno super 震地拳: static cracked-ground decal at the impact; hold then fade out",
+  "hold": true
+ },
+ "bruno_dust_blast": {
+  "file": "bruno_dust_blast.webp",
+  "cols": 6,
+  "rows": 5,
+  "frames": 30,
+  "variants": 1,
+  "fps": 24,
+  "blending": "normal",
+  "loop": false,
+  "size": 190,
+  "aspect": 1.0,
+  "pivot": [
+   0.5,
+   0.17
+  ],
+  "billboard": true,
+  "use": "bruno super 震地拳: dust/debris eruption at the punch point (with shockwave + crack decals)"
+ },
+ "bruno_shockwave": {
+  "file": "bruno_shockwave.webp",
+  "cols": 4,
+  "rows": 4,
+  "frames": 16,
+  "variants": 1,
+  "fps": 30,
+  "blending": "additive",
+  "loop": false,
+  "size": 420,
+  "aspect": 1.0,
+  "pivot": [
+   0.5,
+   0.5
+  ],
+  "billboard": false,
+  "use": "bruno super 震地拳: ground ring on impact (decal, lay flat at the fist)"
+ },
+ "dust_puff": {
+  "file": "dust_puff.webp",
+  "cols": 8,
+  "rows": 4,
+  "frames": 16,
+  "variants": 2,
+  "fps": 24,
+  "blending": "normal",
+  "loop": false,
+  "size": 45,
+  "aspect": 1.0,
+  "pivot": [
+   0.5,
+   0.18
+  ],
+  "billboard": true,
+  "use": "footsteps / landing / skid / dash start (small, at the feet)"
+ },
+ "elec_spark": {
+  "file": "elec_spark.webp",
+  "cols": 8,
+  "rows": 3,
+  "frames": 8,
+  "variants": 3,
+  "fps": 24,
+  "blending": "additive",
+  "loop": false,
+  "size": 90,
+  "aspect": 1.0,
+  "pivot": [
+   0.5,
+   0.5
+  ],
+  "billboard": true,
+  "use": "hits on Voltex robots (with or instead of hit_spark); stun / short-circuit"
+ },
+ "hit_heavy": {
+  "file": "hit_heavy.webp",
+  "cols": 6,
+  "rows": 6,
+  "frames": 12,
+  "variants": 3,
+  "fps": 30,
+  "blending": "additive",
+  "loop": false,
+  "size": 150,
+  "aspect": 1.0,
+  "pivot": [
+   0.5,
+   0.5
+  ],
+  "billboard": true,
+  "use": "hit_spark: light hits (jab/kick) at the contact point; hit_heavy: finishers, knockdowns, super hits"
+ },
+ "hit_spark": {
+  "file": "hit_spark.webp",
+  "cols": 6,
+  "rows": 6,
+  "frames": 12,
+  "variants": 3,
+  "fps": 30,
+  "blending": "additive",
+  "loop": false,
+  "size": 70,
+  "aspect": 1.0,
+  "pivot": [
+   0.5,
+   0.5
+  ],
+  "billboard": true,
+  "use": "hit_spark: light hits (jab/kick) at the contact point; hit_heavy: finishers, knockdowns, super hits"
+ },
+ "kai_fire_burst": {
+  "file": "kai_fire_burst.webp",
+  "cols": 5,
+  "rows": 4,
+  "frames": 20,
+  "variants": 1,
+  "fps": 24,
+  "blending": "additive",
+  "loop": false,
+  "size": 260,
+  "aspect": 1.0,
+  "pivot": [
+   0.5,
+   0.5
+  ],
+  "billboard": true,
+  "use": "kai super finisher: fire explosion at the apex / on the final hit"
+ },
+ "kai_fire_spiral": {
+  "file": "kai_fire_spiral.webp",
+  "cols": 8,
+  "rows": 4,
+  "frames": 32,
+  "variants": 1,
+  "fps": 20,
+  "blending": "additive",
+  "loop": true,
+  "size": 150,
+  "aspect": 0.5,
+  "pivot": [
+   0.5,
+   0.06
+  ],
+  "billboard": true,
+  "use": "kai super 升龙旋风: column on kai during the rising spin (loop while airborne)"
+ },
+ "mira_wind_ring": {
+  "file": "mira_wind_ring.webp",
+  "cols": 6,
+  "rows": 4,
+  "frames": 24,
+  "variants": 1,
+  "fps": 24,
+  "blending": "additive",
+  "loop": true,
+  "size": 170,
+  "aspect": 1.0,
+  "pivot": [
+   0.5,
+   0.25
+  ],
+  "billboard": true,
+  "use": "mira super 旋风腿: loop around her legs/body while spinning (pivot at the feet)"
+ },
+ "mira_wind_slash": {
+  "file": "mira_wind_slash.webp",
+  "cols": 4,
+  "rows": 3,
+  "frames": 12,
+  "variants": 1,
+  "fps": 30,
+  "blending": "additive",
+  "loop": false,
+  "size": 200,
+  "aspect": 1.0,
+  "pivot": [
+   0.5,
+   0.5
+  ],
+  "billboard": true,
+  "use": "mira kicks / super: crescent wind slash along the kick arc (rotate to match)"
+ },
+ "smoke_puff": {
+  "file": "smoke_puff.webp",
+  "cols": 4,
+  "rows": 4,
+  "frames": 16,
+  "variants": 1,
+  "fps": 24,
+  "blending": "normal",
+  "loop": false,
+  "size": 85,
+  "aspect": 1.0,
+  "pivot": [
+   0.5,
+   0.4
+  ],
+  "billboard": true,
+  "use": "enemy death (KO vanish) smoke pop"
+ },
+ "speed_lines": {
+  "file": "speed_lines.webp",
+  "cols": 2,
+  "rows": 6,
+  "frames": 12,
+  "variants": 1,
+  "fps": 24,
+  "blending": "additive",
+  "loop": true,
+  "size": 300,
+  "aspect": 4.0,
+  "pivot": [
+   0.5,
+   0.5
+  ],
+  "billboard": true,
+  "use": "dash / run: streak bundle behind the runner (lines move toward -X; flip for facing)"
+ },
+ "super_flash": {
+  "file": "super_flash.webp",
+  "cols": 4,
+  "rows": 4,
+  "frames": 16,
+  "variants": 1,
+  "fps": 30,
+  "blending": "additive",
+  "loop": false,
+  "size": 260,
+  "aspect": 1.0,
+  "pivot": [
+   0.5,
+   0.5
+  ],
+  "billboard": true,
+  "use": "super start: starburst on the hero as the super begins (tint with the hero colour)"
+ },
+ "zed_staff_disc": {
+  "file": "zed_staff_disc.webp",
+  "cols": 4,
+  "rows": 2,
+  "frames": 8,
+  "variants": 1,
+  "fps": 24,
+  "blending": "additive",
+  "loop": true,
+  "size": 190,
+  "aspect": 1.0,
+  "pivot": [
+   0.5,
+   0.5
+  ],
+  "billboard": true,
+  "use": "zed super 棍影乱舞: whirling staff disc in front of zed (loop; mirror with facing)"
+ },
+ "zed_thrust": {
+  "file": "zed_thrust.webp",
+  "cols": 2,
+  "rows": 6,
+  "frames": 12,
+  "variants": 1,
+  "fps": 30,
+  "blending": "additive",
+  "loop": false,
+  "size": 360,
+  "aspect": 4.0,
+  "pivot": [
+   0.03,
+   0.5
+  ],
+  "billboard": true,
+  "use": "zed super finisher / staff thrust: spear-of-light streak from the staff tip (pivot at its left end; flip X for facing left)"
+ }
+}

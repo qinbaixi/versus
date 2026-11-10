@@ -1,0 +1,9 @@
+{application, versus, [
+    {description, "Neon Knuckles: Versus - 1v1 fighting game authoritative server"},
+    {vsn, "1.0.0"},
+    {registered, [vs_sup, vs_rooms, vs_room_sup]},
+    {mod, {vs_app, []}},
+    {applications, [kernel, stdlib, crypto, cowboy]},
+    {env, [{port, 8090}]},
+    {licenses, ["MIT"]}
+]}.

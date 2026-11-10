@@ -1,0 +1,185 @@
+/* Neon Knuckles 霓虹铁拳 —— 页面样式
+   画布固定 960x540，#stage 通过 JS 设置 transform: scale() 等比适配窗口。 */
+
+html, body {
+  margin: 0; padding: 0; height: 100%;
+  background: #07040f;
+  overflow: hidden;
+  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif;
+  color: #eee;
+  user-select: none;
+}
+
+#stage {
+  position: absolute; left: 0; top: 0;
+  width: 960px; height: 540px;
+  transform-origin: 0 0;
+}
+
+#gl { position: absolute; display: block; background: #07040f; }
+
+/* HUD 2D 画布叠在 WebGL 画布之上（逻辑尺寸 960x540，后备缓冲按真实像素） */
+#game {
+  position: absolute; left: 0; top: 0;
+  display: block;
+  width: 960px; height: 540px;
+  pointer-events: none;
+}
+
+.overlay { position: absolute; inset: 0; }
+.hidden { display: none !important; }
+
+/* ---------- 大厅 ---------- */
+#lobby {
+  display: flex; flex-direction: column; align-items: center;
+  padding-top: 8px; box-sizing: border-box;
+  background: linear-gradient(180deg, rgba(8,4,20,.55), rgba(8,4,20,.82) 60%, rgba(8,4,20,.95));
+}
+
+.logo { text-align: center; line-height: 1; margin-bottom: 6px; }
+.logo-en {
+  font: italic 900 36px "Arial Black", Impact, sans-serif;
+  letter-spacing: 2px;
+  color: #fff;
+  text-shadow: 0 0 6px #ff2bd6, 0 0 18px #ff2bd6, 0 0 36px #a01aff;
+  transform: skewX(-8deg);
+}
+.logo-en span {
+  margin-left: 14px;
+  color: #fff;
+  text-shadow: 0 0 6px #22f3ff, 0 0 18px #22f3ff, 0 0 36px #1a6bff;
+}
+.logo-cn {
+  margin-top: 4px;
+  font-size: 17px; font-weight: bold; letter-spacing: 6px;
+  color: #ffe45c;
+  text-shadow: 0 0 8px #ff9d00, 2px 2px 0 #4a0040;
+}
+
+.form-row { display: flex; gap: 26px; align-items: center; margin: 4px 0 6px; font-size: 15px; }
+.form-row input[type=text], .form-row input:not([type]), .prow input {
+  background: #120a26; color: #fff; border: 2px solid #5a3cff; border-radius: 4px;
+  padding: 4px 8px; font-size: 15px; width: 110px; outline: none; font-family: inherit;
+}
+.prow input:focus, .form-row input:focus { border-color: #22f3ff; box-shadow: 0 0 8px #22f3ff88; }
+.chk { cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.chk input { width: 18px; height: 18px; accent-color: #ff2bd6; }
+
+.prow {
+  display: flex; align-items: center; gap: 12px;
+  background: rgba(20,10,44,.7); border: 1px solid #3a2a70; border-radius: 8px;
+  padding: 6px 10px; margin: 4px 0;
+}
+.ptag {
+  font: 900 18px "Arial Black", sans-serif; width: 38px; text-align: center;
+  border-radius: 4px; padding: 4px 0; color: #111;
+}
+.ptag.p1 { background: #ffe45c; }
+.ptag.p2 { background: #22f3ff; }
+.prow .name { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: #b9a9ff; }
+
+.chars { display: flex; gap: 8px; }
+.card {
+  width: 140px; height: 124px; position: relative; cursor: pointer;
+  background: #0d0820; border: 2px solid #2c2050; border-radius: 6px;
+  overflow: hidden; transition: transform .08s, border-color .08s;
+}
+.card:hover { transform: translateY(-2px); }
+.card canvas { position: absolute; left: 0; top: 0; width: 140px; height: 128px; }
+.card .cname {
+  position: absolute; left: 6px; top: 4px;
+  font-weight: bold; font-size: 16px; text-shadow: 1px 1px 0 #000;
+}
+.card .cdesc {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  font-size: 11px; line-height: 1.25; padding: 3px 5px;
+  background: rgba(0,0,0,.6); color: #ddd;
+}
+.card .stat { position: absolute; right: 4px; top: 26px; font-size: 10px; color: #ccc; text-align: right; line-height: 1.3; background: rgba(8,4,20,.55); padding: 1px 4px; border-radius: 4px; }
+.card.dim { opacity: .45; filter: saturate(.5); }
+.card.sel { border-color: var(--c); box-shadow: 0 0 12px var(--c), inset 0 0 18px color-mix(in srgb, var(--c) 35%, transparent); }
+
+#startBtn {
+  margin-top: 8px;
+  font: bold 24px inherit; font-family: inherit;
+  letter-spacing: 8px; padding: 6px 42px 6px 50px;
+  color: #fff; background: linear-gradient(180deg, #ff3fb5, #b0178a);
+  border: 2px solid #ffc2ec; border-radius: 8px; cursor: pointer;
+  box-shadow: 0 0 16px #ff2bd6aa;
+}
+#startBtn:hover { filter: brightness(1.15); }
+#startBtn:disabled { filter: grayscale(.8); cursor: wait; }
+
+.help { margin-top: 8px; font-size: 12px; color: #a99fd0; text-align: center; line-height: 1.6; }
+.help b { color: #ffe45c; }
+
+/* ---------- 错误框 ---------- */
+#errorBox { display: flex; align-items: center; justify-content: center; background: rgba(5,0,15,.75); }
+.err-panel {
+  background: #160b2e; border: 2px solid #ff3f6c; border-radius: 10px;
+  padding: 22px 40px; text-align: center; box-shadow: 0 0 30px #ff3f6c66;
+}
+.err-title { font-size: 26px; font-weight: bold; color: #ff6f8f; margin-bottom: 10px; }
+.err-msg { font-size: 16px; margin-bottom: 18px; color: #eee; }
+#backBtn {
+  font-size: 18px; font-family: inherit; padding: 6px 26px; cursor: pointer;
+  background: #2a1a5a; color: #fff; border: 2px solid #22f3ff; border-radius: 6px;
+}
+#backBtn:hover { background: #3a2a7a; }
+
+/* ---------- 游戏中：操作说明 ---------- */
+#helpBtn {
+  position: absolute; right: 8px; top: 64px; width: 22px; height: 22px; padding: 0;
+  font: 900 14px "Arial Black", sans-serif; color: #ffe45c; cursor: pointer;
+  background: rgba(20,10,44,.8); border: 2px solid #7a5cff; border-radius: 50%;
+  box-shadow: 0 0 8px #7a5cff88; z-index: 3;
+}
+#helpBtn:hover { border-color: #22f3ff; }
+#helpBox { display: flex; align-items: center; justify-content: center; background: rgba(5,0,15,.55); z-index: 4; cursor: pointer; }
+.help-panel {
+  background: linear-gradient(180deg, rgba(30,16,66,.96), rgba(12,6,30,.96));
+  border: 2px solid #ff2bd6; border-radius: 12px; padding: 14px 24px 12px;
+  box-shadow: 0 0 24px #ff2bd666, inset 0 0 30px #22f3ff18; max-width: 640px; animation: helpIn .18s ease-out;
+}
+@keyframes helpIn { from { transform: scale(.92); opacity: 0; } to { transform: none; opacity: 1; } }
+.help-title { font-size: 22px; font-weight: 900; color: #ffe45c; text-align: center; margin-bottom: 8px; text-shadow: 0 0 10px #ff9d00; }
+.help-title small { font: italic 900 12px "Arial Black", sans-serif; color: #22f3ff; margin-left: 6px; letter-spacing: 1px; }
+.help-panel table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.help-panel th { color: #b9a9ff; font-weight: bold; font-size: 12px; padding: 3px 8px; border-bottom: 1px solid #3a2a70; }
+.help-panel td { padding: 4px 8px; border-bottom: 1px solid #241848; color: #eee; white-space: nowrap; }
+.help-panel td:first-child { color: #fff; font-weight: bold; }
+.help-panel td i { font-style: normal; font-weight: normal; font-size: 11px; color: #ff9df0; margin-left: 4px; }
+.help-panel kbd {
+  display: inline-block; min-width: 14px; padding: 0 5px; margin: 0 1px; text-align: center;
+  font: 900 11px "Arial Black", sans-serif; line-height: 18px; color: #1a0f22;
+  background: #ffe45c; border-radius: 4px; box-shadow: 0 2px 0 #a8801a;
+}
+.help-panel ul { margin: 10px 0 4px; padding-left: 18px; font-size: 12.5px; line-height: 1.7; color: #ddd; }
+.help-panel li b { color: #22f3ff; }
+.help-foot { text-align: center; font-size: 11px; color: #9a90c0; margin-top: 4px; }
+
+/* ---------- 对决版：模式页签与对手设置 ---------- */
+.logo-en em {
+  margin-left: 12px; font-size: 20px; color: #ffe45c; vertical-align: 6px;
+  text-shadow: 0 0 8px #ff9d00, 0 0 18px #ff5a00;
+}
+#modes { display: flex; gap: 8px; margin: 2px 0 4px; }
+#modes button {
+  font: bold 15px inherit; font-family: inherit; letter-spacing: 2px; padding: 5px 20px; cursor: pointer;
+  color: #b9a9ff; background: rgba(20,10,44,.8); border: 2px solid #3a2a70; border-radius: 6px;
+  transform: skewX(-8deg);
+}
+#modes button:hover { border-color: #7a5cff; color: #fff; }
+#modes button.on { color: #1a0f22; background: linear-gradient(180deg, #ffe45c, #ff9d00); border-color: #fff3b0; box-shadow: 0 0 12px #ff9d00aa; }
+#modeDesc { font-size: 12px; color: #a99fd0; height: 18px; margin-bottom: 2px; }
+.prow .side { display: flex; flex-direction: column; gap: 8px; width: 118px; }
+.ptag.cpu { background: #ff5a7a; font-size: 14px; }
+#cpuOpts { display: flex; flex-direction: column; gap: 8px; }
+.prow select {
+  background: #120a26; color: #fff; border: 2px solid #5a3cff; border-radius: 4px;
+  padding: 4px 6px; font-size: 15px; width: 130px; outline: none; font-family: inherit;
+}
+.chk.small { font-size: 13px; color: #b9a9ff; }
+.chk.small input { width: 15px; height: 15px; }
+.help-panel table.moves { margin-top: 8px; }
+.help-panel table.moves td { color: #ffe9a8; }
