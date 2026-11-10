@@ -208,7 +208,7 @@ function runClipSheet(scene, renderer, id, q, info, A) {
 function runSeq(scene, renderer, id, q, info) {
   scene.fog = null;
   // 状态名后加 ~ 表示接着上一段的状态内时间（如 jump.0.10,jump~.0.12.0.L 测空中转身）
-  const script = (q.get('script') || 'idle.0.10').split(',').map((x) => { const [s0, cb, d, hs, f] = x.split('.'); const cont = s0.endsWith('~'); return { s: cont ? s0.slice(0, -1) : s0, cont, cb: +cb || 0, d: +d, hs: +(hs || 0), f: f === 'L' ? -1 : 1 }; });
+  const script = (q.get('script') || 'idle.0.10').split(',').map((x) => { const [s0, cb, d, hs, f, mv] = x.split('.'); const cont = s0.endsWith('~'); return { s: cont ? s0.slice(0, -1) : s0, cont, cb: +cb || 0, d: +d, hs: +(hs || 0), f: f === 'L' ? -1 : 1, mv: mv || '' }; });
   const SPD = { kai: 4.2, mira: 5.2, bruno: 3.4, zed: 4.0 }[id] || 4;
   // 近似服务器的速度 / 高度（驱动步频、远跳判定与必杀离地高度）
   const kin = (s, t, long) => {
@@ -244,7 +244,7 @@ function runSeq(scene, renderer, id, q, info) {
           const t = base + (frz ? 3 : tt >= 3 + seg.hs ? tt - seg.hs + ss / sub : tt + ss / sub);
           const m = kin(seg.s, t, long);
           z = m.z;
-          b.update({ s: seg.s, cb: seg.cb, t, f: seg.f, a: seg.s === 'grab' ? 'knee' : '', z, i: 0, _spd: frz ? 0 : m.spd, _vx: frz ? 0 : m.vx * seg.f, _vy: 0, _frozen: frz }, t, 1 / 30 / sub, k / 30);
+          b.update({ s: seg.s, cb: seg.cb, t, f: seg.f, a: seg.mv || (seg.s === 'grab' ? 'knee' : ''), z, i: 0, _spd: frz ? 0 : m.spd, _vx: frz ? 0 : m.vx * seg.f, _vy: 0, _frozen: frz }, t, 1 / 30 / sub, k / 30);
           a.updateStrands(1 / 30 / sub);
         }
         if (++k > stopTick) done = true;

@@ -36,12 +36,15 @@ valid_char(C) -> lists:member(C, [kai, mira, bruno, zed]).
 stats(kai)   -> #{spd => 4.2, hp => 1000, pow => 1.0,  reach => 58, quick => 0,  thr => 110};
 stats(mira)  -> #{spd => 5.2, hp => 900,  pow => 0.85, reach => 54, quick => -2, thr => 100};
 stats(bruno) -> #{spd => 3.4, hp => 1150, pow => 1.25, reach => 60, quick => 2,  thr => 150};
-stats(zed)   -> #{spd => 4.0, hp => 950,  pow => 0.95, reach => 82, quick => 1,  thr => 105}.
+stats(zed)   -> #{spd => 4.0, hp => 950,  pow => 0.95, reach => 82, quick => 1,  thr => 105};
+%% 街机关底 Boss「OVERCLOCK」：只由 CPU 操控。体型大、血厚、出招带霸体；不会蹲、不会跳（下段打得到它）
+stats(boss)  -> #{spd => 3.0, hp => 1450, pow => 1.1, reach => 72, quick => 2,  thr => 160}.
 
 super_len(kai) -> 38;
 super_len(mira) -> 40;
 super_len(bruno) -> 34;
-super_len(zed) -> 36.
+super_len(zed) -> 36;
+super_len(boss) -> 44.
 
 %% ---------------------------------------------------------------- 对外接口
 new() ->
@@ -222,6 +225,33 @@ st(block, F, O, S) ->
 st(win, F, _O, _S) -> {F, []};
 st(dead, F, _O, _S) -> {F, []};
 
+%% ---- Boss：重拳（起手带一次霸体）
+st(bpunch, #{t := T, x := X, f := Face} = F, _O, _S) ->
+    F1 = case T >= 9 andalso T =< 12 of true -> F#{x := X + Face * 4.0}; false -> F end,
+    F2 = case T >= 11 of true -> F1#{armor := 0}; false -> F1 end,
+    finish(F2, T, 31);
+%% ---- Boss：跳起踩地。落地一圈下段冲击波（要蹲防或跳起躲）
+st(bstomp, #{t := T, x := X, f := Face} = F, _O, _S) ->
+    if
+        T < 5 -> {F, []};
+        T < 19 ->
+            {F#{z := 85.0 * math:sin(math:pi() * (T - 5) / 14), x := X + Face * 4.5}, []};
+        T =:= 19 ->
+            {F#{z := 0.0, armor := 0},
+             [#{k => fx, n => slam, c => boss, x => X, y => 100, r => 130}, #{k => fx, n => quake, r => 130, x => X, y => 100},
+              sfx(heavy)]};
+        true -> finish(F, T, 38)
+    end;
+%% ---- Boss：蓄力冲撞（全程两次霸体，撞到人或冲完才停）
+st(charge, #{t := T, x := X, f := Face, vx := Vx} = F, _O, _S) ->
+    if
+        T < 12 -> {F, []};
+        T =:= 12 -> {F#{vx := 11.0, x := X + Face * 11.0}, [sfx(dash)]};
+        T =< 34 -> {F#{x := X + Face * Vx}, []};
+        T =:= 35 -> {F#{vx := 0.0, armor := 0}, []};
+        true -> finish(F, T, 46)
+    end;
+
 st(bstep, #{t := T, x := X, f := Face} = F, _O, _S) ->
     V = 9.5 * math:pow(0.84, T),
     Z = 9.0 * math:sin(math:pi() * min(T, 10) / 10),
@@ -294,6 +324,18 @@ st(launch, #{mv := dp, t := T, x := X, z := Z, vz := Vz, f := Face} = F, _O, _S)
                 false -> {F#{z := Z1, vz := Vz1}, []}
             end
     end;
+st(launch, #{mv := zsp2, t := T, x := X, f := Face, con := Con} = F, _O, _S) ->
+    %% 泽德「挑天棍」：踏步小跳，长棍从脚下抡过头顶；命中后可用必杀取消
+    Z = if T < 3 -> 0.0; T =< 15 -> 30.0 * math:sin(math:pi() * (T - 3) / 12); true -> 0.0 end,
+    F1 = F#{z := Z, x := X + case T >= 2 andalso T =< 7 of true -> Face * 2.0; false -> 0.0 end},
+    case T >= 10 andalso Con of
+        true ->
+            case actions(F1, [super]) of
+                none -> zsp2_end(F1, T);
+                R -> R
+            end;
+        false -> zsp2_end(F1, T)
+    end;
 st(launch, #{t := T, con := Con} = F, _O, _S) ->
     case T >= 7 andalso Con of
         true ->
@@ -351,22 +393,23 @@ st(special, #{t := T, c := C} = F, _O, _S) ->
 %% ---- 投
 st(grab, #{t := T} = F, _O, _S) ->
     finish(F, T, 20);
-st(throw, #{t := T, x := X, f := Face} = F, #{s := OS}, _S) ->
+st(throw, #{t := T, x := X, f := Face, c := C} = F, #{s := OS}, _S) ->
+    Rel = release_at(C),
     if
-        T < 8, OS =/= grabbed ->
+        T < Rel, OS =/= grabbed ->
             %% 被拆投：双方弹开
             {(to_idle(F))#{s := hurt, stun := 12, kb := -Face * 6.0, x := X}, []};
-        T >= 18 -> {to_idle(F), []};
+        T >= Rel + 10 -> {to_idle(F), []};
         true -> {F, []}
     end;
-st(grabbed, #{t := T} = F, #{s := OS, x := OX, f := OF}, _S) ->
+st(grabbed, #{t := T} = F, #{s := OS, x := OX, f := OF} = O, _S) ->
     Tech = T =< 6 andalso pressed(F, ?THROW),
     if
         Tech ->
             {(to_idle(use(F, ?THROW)))#{s := hurt, stun := 10, kb := OF * 6.0},
              [#{k => block, x => OX + OF * 18, z => 55, tech => 1}, sfx(block)]};
         OS =/= throw, T > 1 -> {to_idle(F), []};
-        true -> {F#{x := OX + OF * 34.0, z := 0.0}, []}
+        true -> {F#{x := OX + OF * 34.0 * (1 - lift_k(O)), z := 78.0 * lift_k(O)}, []}
     end;
 
 %% ---- 受击 / 浮空 / 倒地 / 起身
@@ -395,8 +438,19 @@ st(getup, #{t := T} = F, _O, _S) ->
         false -> {F, []}
     end.
 
+zsp2_end(F, T) when T >= 28 -> {to_idle(F), []};
+zsp2_end(#{t := 16} = F, _) -> {F#{z := 0.0}, [sfx(land)]};
+zsp2_end(F, _) -> {F, []}.
+
 finish(F, T, Len) when T >= Len -> {to_idle(F), []};
 finish(F, _, _) -> {F, []}.
+
+%% 布鲁诺的投：抓住后 2..9 tick 把对手举过头顶（0 → 1）
+lift_k(#{c := bruno, s := throw, t := T}) -> min(1.0, max(0.0, (T - 1) / 8));
+lift_k(_) -> 0.0.
+
+release_at(bruno) -> 11;
+release_at(_) -> 8.
 
 finish_crouch(F, T, Len) when T >= Len ->
     F1 = to_idle(F),
@@ -423,6 +477,15 @@ neutral(F0, O, S) ->
         R -> R
     end.
 
+move(#{c := boss, x := X, f := Face} = F, O, S) ->
+    #{spd := Spd} = stats(boss),
+    Fw = fwd(F),
+    case Fw < 0 andalso threat(F, O, S) of
+        true -> {(set(F, block))#{run := false}, []};
+        false when Fw > 0 -> {(set(F, walk))#{x := X + Face * Spd, run := false}, []};
+        false when Fw < 0 -> {(set(F, walk))#{x := X - Face * Spd * 0.8, run := false}, []};
+        false -> {(set(F, idle))#{run := false}, []}
+    end;
 move(#{c := C, x := X, f := Face, dtap := DTap, run := Run0} = F, O, S) ->
     #{spd := Spd} = stats(C),
     Fw = fwd(F),
@@ -449,7 +512,8 @@ move(#{c := C, x := X, f := Face, dtap := DTap, run := Run0} = F, O, S) ->
 
 %% 对手正在出招且够得着，或有飞行道具飞来：按住后会摆出防御姿势
 threat(#{x := X, id := Id}, #{x := OX, s := OS}, #{pj := Pj}) ->
-    Atk = lists:member(OS, [attack, cjab, sweep, launch, dash, runatk, jattack, slam, special, cast]),
+    Atk = lists:member(OS, [attack, cjab, sweep, launch, dash, runatk, jattack, slam, special, cast,
+                            bpunch, bstomp, charge]),
     (Atk andalso abs(OX - X) < 190)
         orelse lists:any(fun(#{o := Own, x := PX, vx := PVx}) ->
                                  Own =/= Id andalso abs(PX - X) < 210 andalso (X - PX) * PVx > 0
@@ -474,6 +538,31 @@ actions(F, [throw | T]) ->
         true ->
             {(use(F, ?THROW))#{s := grab, t := 0, mv := case fwd(F) < 0 of true -> back; false -> front end,
                                hit := [], con := false, run := false}, [sfx(swing)]};
+        false -> actions(F, T)
+    end;
+actions(#{c := boss} = F, [punch | T]) ->
+    case pressed(F, ?PUNCH) of
+        true -> {(begin_move(use(F, ?PUNCH), bpunch, p5))#{armor := 1}, [sfx(swing)]};
+        false -> actions(F, T)
+    end;
+actions(#{c := boss} = F, [kick | T]) ->
+    case pressed(F, ?KICK) of
+        true -> boss_stomp(use(F, ?KICK));
+        false -> actions(F, T)
+    end;
+actions(#{c := boss} = F, [special | T]) ->
+    case pressed(F, ?SPEC) of
+        true ->
+            F1 = use(F, ?SPEC),
+            Fw = fwd(F1),
+            if
+                Fw > 0 -> {(begin_move(F1, charge, sp6))#{armor := 2}, [sfx(special)]};
+                true ->
+                    case held(F1, ?DOWN) orelse maps:get(own, F1) of
+                        true -> boss_stomp(F1);
+                        false -> {begin_move(F1, cast, sp5), [sfx(special)]}
+                    end
+            end;
         false -> actions(F, T)
     end;
 actions(F, [special | T]) ->
@@ -519,12 +608,18 @@ actions(F, [punch | T]) ->
         false -> actions(F, T)
     end.
 
+boss_stomp(F) ->
+    {(begin_move(F, bstomp, k5))#{armor := 1}, [sfx(jump)]}.
+
 begin_move(F, St, Mv) ->
     F#{s := St, t := 0, mv := Mv, hit := [], con := false, run := false, vx := 0.0, kb := 0.0, cb := 0, armor := 0}.
 
 start_sp2(#{c := kai} = F) ->
     {(begin_move(F, launch, dp))#{inv := 8}, [sfx(special), #{k => fx, n => launch, c => kai, x => maps:get(x, F),
                                                              y => 100, f => maps:get(f, F)}]};
+start_sp2(#{c := zed} = F) ->
+    {(begin_move(F, launch, zsp2))#{inv := 6}, [sfx(special), #{k => fx, n => launch, c => zed, x => maps:get(x, F),
+                                                               y => 100, f => maps:get(f, F), m => zsp2}]};
 start_sp2(F) ->
     start_slam(F, sp2).
 
@@ -562,13 +657,15 @@ rush(C, prun) ->
 cast(kai) -> #{len => 24, at => 8};
 cast(mira) -> #{len => 19, at => 6};
 cast(bruno) -> #{len => 28, at => 10};
-cast(zed) -> #{len => 22, at => 7}.
+cast(zed) -> #{len => 22, at => 7};
+cast(boss) -> #{len => 30, at => 13}.
 
 %% 飞行道具：v 速度，z0..z1 高度范围，life 存活 tick
 proj(kai)   -> #{v => 9.0,  z0 => 38, z1 => 78, life => 95,  dmg => 70};
 proj(mira)  -> #{v => 13.0, z0 => 36, z1 => 72, life => 60,  dmg => 45};
 proj(bruno) -> #{v => 6.5,  z0 => 0,  z1 => 34, life => 115, dmg => 95};
-proj(zed)   -> #{v => 16.0, z0 => 44, z1 => 68, life => 22,  dmg => 60}.
+proj(zed)   -> #{v => 16.0, z0 => 44, z1 => 68, life => 22,  dmg => 60};
+proj(boss)  -> #{v => 10.5, z0 => 40, z1 => 80, life => 90,  dmg => 80}.   %% 旋转扳手
 
 slam_ring(bruno, sp2) -> 120;
 slam_ring(_, _) -> 48.
@@ -602,6 +699,10 @@ super_step(bruno, T, #{x := X} = F) ->
              _ -> []
          end,
     {F#{z := Z}, Ev};
+super_step(boss, T, #{x := X, f := Face} = F) ->
+    %% 「超频连锤」：眼睛转红，边逼近边连打，最后一记上冲重拳
+    Vx = if T >= 6, T < 32 -> Face * 1.6; T >= 33, T =< 36 -> Face * 5.0; true -> 0.0 end,
+    {F#{x := X + Vx, z := 0.0}, case T of 34 -> [sfx(heavy)]; _ -> [] end};
 super_step(zed, T, #{x := X, f := Face} = F) ->
     Vx = case T >= 22 andalso T =< 28 of true -> Face * 14.0; false -> 0.0 end,
     {F#{x := X + Vx, z := 0.0}, []}.
@@ -628,6 +729,10 @@ box(#{s := sweep, t := T, c := C}) when T >= 5, T =< 7 ->
 box(#{s := launch, mv := dp, t := T, c := C}) when T >= 3, T =< 9 ->
     #{pow := P} = stats(C),
     bx(dp, -14, 52, 0, 125, 120 * P, mid, kd, 0, 12, 4, true, true);
+box(#{s := launch, mv := zsp2, t := T, c := C}) when T >= 3, T =< 9 ->
+    #{reach := R, pow := P} = stats(C),
+    %% 抡起的长棍画出一道大弧：身前到头顶都有判定，专打跳进来的对手
+    bx(zsp2, -24, R + 18, 0, 215, 105 * P, mid, launch, 0, 12, 5, true, true);
 box(#{s := launch, mv := k5, t := T, c := C}) when T >= 3, T =< 6 ->
     #{reach := R, pow := P} = stats(C),
     bx(k5, -10, R + 4, 20, 140, 90 * P, mid, launch, 0, 9, 6, false, true);
@@ -659,14 +764,23 @@ box(#{s := St, t := T, mv := Mv, c := C}) when St =:= dash; St =:= runatk ->
             bx(rush, -10, R + Rg, Z0, Z1, Dmg * P, Lvl, Kind, 0, 11, 7, Mv =:= sp6, true);
         false -> none
     end;
+box(#{s := bpunch, t := T, c := C}) when T >= 10, T =< 12 ->
+    #{reach := R, pow := P} = stats(C),
+    bx(bpunch, -10, R + 26, 30, 125, 85 * P, mid, kd, 0, 14, 9, false, true);
+box(#{s := bstomp, t := T, c := C}) when T >= 19, T =< 20 ->
+    #{pow := P} = stats(C),
+    bx(stomp, -130, 130, 0, 26, 70 * P, low, trip, 0, 13, 9, true, true);
+box(#{s := charge, t := T, vx := Vx, c := C}) when T >= 12, T =< 34, Vx > 0 ->
+    #{reach := R, pow := P} = stats(C),
+    bx(charge, -10, R + 18, 10, 140, 115 * P, mid, kd, 0, 14, 10, true, true);
 box(#{s := grab, t := 4, c := C}) ->
-    #{id => grab, x0 => 0, x1 => case C of bruno -> 70; _ -> 62 end, z0 => 0, z1 => 90, dmg => 0, lvl => throw,
+    #{id => grab, x0 => 0, x1 => case C of bruno -> 70; boss -> 84; _ -> 62 end, z0 => 0, z1 => 90, dmg => 0, lvl => throw,
       kind => grab, hst => 0, bst => 0, push => 0, chip => false, heavy => false, sup => false};
-box(#{s := throw, t := 8, c := C, x := X, f := Face, mv := Mv}) ->
+box(#{s := throw, t := T, c := C, x := X, f := Face, mv := Mv}) when T =:= 8, C =/= bruno; T =:= 11, C =:= bruno ->
     #{thr := Dmg} = stats(C),
     #{id => release, x0 => -200, x1 => 200, z0 => -50, z1 => 200, dmg => Dmg, lvl => throw, kind => release,
       hst => 0, bst => 0, push => 0, chip => false, heavy => true, sup => false,
-      dir => case Mv of back -> -Face; _ -> Face end, ox => X};
+      dir => case Mv of back -> -Face; _ -> Face end, ox => X, slam => C =:= bruno};
 box(#{s := special, c := C, t := T}) ->
     #{reach := R, pow := P} = stats(C),
     super_box(C, T, R, P);
@@ -694,6 +808,10 @@ super_box(zed, T, R, P) when T >= 3, T =< 20 ->
     sbx(bx({sup, (T - 3) div 4}, -(R + 4), R + 10, 0, 115, 28 * P, mid, hit, 10, 9, 1, true, false));
 super_box(zed, T, R, P) when T > 22, T =< 28 ->
     sbx(bx({sup, fin}, -10, R + 70, 20, 90, 170 * P, mid, kd, 0, 13, 7, true, true));
+super_box(boss, T, R, P) when T >= 6, T < 32 ->
+    sbx(bx({sup, (T - 6) div 4}, -(R + 4), R + 22, 10, 130, 26 * P, mid, drag, 10, 9, 0, true, false));
+super_box(boss, 34, R, P) ->
+    sbx(bx({sup, fin}, -(R + 10), R + 44, 0, 170, 175 * P, mid, kd, 0, 13, 7, true, true));
 super_box(_, _, _, _) -> none.
 
 %% ---------------------------------------------------------------- 受击框与判定
@@ -702,7 +820,9 @@ hurt_h(#{s := St, mv := Mv, c := C, a := A}) ->
         crouch -> 60; cjab -> 60; sweep -> 55;
         block when A =:= c -> 60;
         runatk when C =:= mira, Mv =:= sp6 -> 34;
+        air when C =:= boss -> 110;
         air -> 70; jump -> 80; jattack -> 80;
+        _ when C =:= boss -> 140;
         _ -> 95
     end;
 hurt_h(F) -> hurt_h(F#{a => none}).
@@ -711,7 +831,7 @@ hittable(#{s := St, inv := Inv}) ->
     Inv =:= 0 andalso not lists:member(St, [knockdown, down, getup, grabbed, win, dead, throw]).
 
 grounded(#{z := Z, s := St}) ->
-    Z =< 0.5 andalso not lists:member(St, [jump, jattack, slam, air, knockdown, special]).
+    Z =< 0.5 andalso not lists:member(St, [jump, jattack, slam, air, knockdown, special, bstomp]).
 
 touches(#{hit := Hit} = A, #{id := Id} = Box, V) ->
     (not lists:member(Id, Hit)) andalso touches1(A, Box, V).
@@ -724,14 +844,16 @@ touches1(#{x := X, f := Face}, #{kind := grab, x1 := X1}, #{x := VX, s := VS, st
         andalso (lists:member(VS, [idle, walk, run, crouch, land]) orelse (VS =:= block andalso Stun =:= 0));
 touches1(#{x := X, z := Z, f := Face}, #{x0 := X0, x1 := X1, z0 := Z0, z1 := Z1}, #{x := VX, z := VZ} = V) ->
     {L, R} = case Face of 1 -> {X + X0, X + X1}; _ -> {X - X1, X - X0} end,
-    hittable(V) andalso R >= VX - 20 andalso L =< VX + 20
+    Hw = case maps:get(c, V, none) of boss -> 30; _ -> 20 end,
+    hittable(V) andalso R >= VX - Hw andalso L =< VX + Hw
         andalso Z + Z1 >= VZ andalso Z + Z0 =< VZ + hurt_h(V).
 
 %% 是否防住：必须在地面、处于可防御状态、按着“后”，且站 / 蹲与攻击段位相符
 blocks(#{m := M, x := X, s := St} = V, AttX, Lvl) ->
     Back = if AttX > X -> ?LEFT; AttX < X -> ?RIGHT; true -> case maps:get(f, V) of 1 -> ?LEFT; _ -> ?RIGHT end end,
-    Crouch = M band ?DOWN =/= 0,
+    Crouch = M band ?DOWN =/= 0 andalso maps:get(c, V) =/= boss,
     grounded(V) andalso lists:member(St, [idle, walk, crouch, block])
+        andalso (Lvl =/= low orelse Crouch)
         andalso M band Back =/= 0
         andalso case Lvl of mid -> true; over -> not Crouch; low -> Crouch; _ -> false end.
 
@@ -741,13 +863,24 @@ apply_hit(A, V, #{kind := grab}) ->
     {A#{s := throw, t := 0, hit := []},
      (to_idle(V))#{s := grabbed, x := AX + Face * 34.0},
      [sfx(grab)]};
-apply_hit(#{x := AX} = A, V, #{kind := release, dmg := Dmg, dir := Dir, id := Id}) ->
+apply_hit(#{x := AX} = A, V, #{kind := release, dmg := Dmg, dir := Dir, id := Id} = Box) ->
     Hp = max(0, maps:get(hp, V) - Dmg),
-    V1 = V#{hp := Hp, s := knockdown, t := 0, vz := 8.5, vx := Dir * 7.0, z := 12.0, hs := 5, jc := 0,
-            x := case Dir =:= maps:get(f, A) of true -> maps:get(x, V); false -> AX + Dir * 20.0 end},
+    V1 = case maps:get(slam, Box, false) of
+             true ->
+                 %% 举过头顶后朝投掷方向砸下去
+                 V#{hp := Hp, s := knockdown, t := 0, vz := -6.0, vx := Dir * 2.5, z := 70.0, hs := 6, jc := 0,
+                    x := AX + Dir * 30.0};
+             false ->
+                 V#{hp := Hp, s := knockdown, t := 0, vz := 8.5, vx := Dir * 7.0, z := 12.0, hs := 5, jc := 0,
+                    x := case Dir =:= maps:get(f, A) of true -> maps:get(x, V); false -> AX + Dir * 20.0 end}
+         end,
     A1 = (gain(A, Dmg * 0.08))#{hit := [Id], hc := 1, hs := 5, f := Dir},
     {A1, gain(V1, Dmg * 0.05),
-     [#{k => hit, x => maps:get(x, V1), z => 50, b => 1}, sfx(throw)]};
+     case maps:get(slam, Box, false) of
+         true -> [#{k => hit, x => maps:get(x, V1), z => 30, b => 1}, sfx(throw), sfx(heavy),
+                  #{k => fx, n => slam, c => maps:get(c, A), x => maps:get(x, V1), y => 100, r => 60}];
+         false -> [#{k => hit, x => maps:get(x, V1), z => 50, b => 1}, sfx(throw)]
+     end};
 apply_hit(#{x := AX, f := AF, hit := Hit} = A, V, #{id := Id, lvl := Lvl} = Box) ->
     A1 = A#{hit := [Id | Hit], con := true},
     case blocks(V, AX, Lvl) of
@@ -772,7 +905,14 @@ blocked(A, #{x := VX, hp := Hp, m := M} = V, #{dmg := Dmg, bst := Bst, push := P
     A1 = corner(stop_rush((gain(A, 2.0))#{hs := Hs}), V1, Dir, Push),
     {A1, V1, [#{k => block, x => PX, z => PZ}, sfx(block)]}.
 
-struck(#{hc := Hc0} = A, #{x := VX, hp := Hp, jc := Jc, armor := Armor, s := VS} = V,
+struck(A, #{c := boss, z := VZ} = V, #{kind := K0, hst := H0} = Box, AX, AF)
+  when (K0 =:= launch orelse K0 =:= bounce orelse K0 =:= lift), VZ =< 0.5 ->
+    %% Boss 太重，挑不起来：挑空 / 砸地反弹 / 必杀托举对它只造成硬直
+    struck1(A, V, Box#{kind := case K0 of lift -> drag; _ -> hit end, hst := max(H0, 14)}, AX, AF);
+struck(A, V, Box, AX, AF) ->
+    struck1(A, V, Box, AX, AF).
+
+struck1(#{hc := Hc0} = A, #{x := VX, hp := Hp, jc := Jc, armor := Armor, s := VS} = V,
        #{dmg := Dmg0, kind := Kind, hst := Hst, push := Push, heavy := Heavy, sup := Sup} = Box, AX, AF) ->
     Dir = if VX > AX -> 1; VX < AX -> -1; true -> AF end,
     InCombo = lists:member(VS, [hurt, air]),
@@ -822,7 +962,7 @@ struck(#{hc := Hc0} = A, #{x := VX, hp := Hp, jc := Jc, armor := Armor, s := VS}
             {A2, V1, HitEv ++ case Dead of true -> [#{k => ko, x => VX, z => PZ}]; false -> [] end}
     end.
 
-stop_rush(#{s := St} = A) when St =:= dash; St =:= runatk -> A#{vx := 0.0};
+stop_rush(#{s := St} = A) when St =:= dash; St =:= runatk; St =:= charge -> A#{vx := 0.0};
 stop_rush(A) -> A.
 
 %% 对手被逼在版边时，推力改由攻击方承受（把自己弹开）
@@ -874,14 +1014,15 @@ separate(#{fs := #{1 := A0, 2 := B0}} = S) ->
     #{x := AX, z := AZ} = A, #{x := BX, z := BZ} = B,
     Solid = fun(#{s := St}) -> not lists:member(St, [grabbed, throw, down, dead, knockdown]) end,
     D = BX - AX,
-    case abs(D) < 36 andalso abs(AZ - BZ) < 60 andalso Solid(A) andalso Solid(B) of
+    Body = case maps:get(c, A) =:= boss orelse maps:get(c, B) =:= boss of true -> 50; false -> 36 end,
+    case abs(D) < Body andalso abs(AZ - BZ) < 60 andalso Solid(A) andalso Solid(B) of
         true ->
             Sg = if D > 0 -> 1; D < 0 -> -1; true -> -maps:get(f, A) end,
-            Push = (36 - abs(D)) / 2,
+            Push = (Body - abs(D)) / 2,
             A1 = clampx(A#{x := AX - Sg * Push}),
             B1 = clampx(B#{x := BX + Sg * Push}),
             %% 一方贴墙时另一方承担全部位移
-            Left = (36 - abs(maps:get(x, B1) - maps:get(x, A1))),
+            Left = (Body - abs(maps:get(x, B1) - maps:get(x, A1))),
             {A2, B2} = case Left > 0.01 of
                            true ->
                                case maps:get(x, A1) =< ?XMIN + 0.01 orelse maps:get(x, A1) >= ?XMAX - 0.01 of

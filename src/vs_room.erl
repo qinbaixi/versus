@@ -48,7 +48,8 @@ handle_call({join, Conn, Name, Char, Mode0, Arg}, _From, #{sim := Sim, conns := 
             Sim1 = vs_sim:start(vs_sim:seat(vs_sim:seat(Sim, 1, Char, Name, false), 2, CChar, cpu_name(Lv), true)),
             {reply, {ok, 1, cpu}, St#{mode := cpu, sim := Sim1, conns := Conns#{Conn => 1}, ai := vs_ai:new(Lv, seed())}};
         {arc, []} ->
-            Order = [C || C <- shuffle(?CHARS -- [Char])] ++ [Char],
+            %% 其余三人（随机顺序）→ 自己的镜像 → 关底 Boss OVERCLOCK
+            Order = [C || C <- shuffle(?CHARS -- [Char])] ++ [Char, boss],
             Arc = #{order => Order, st => 1, char => Char, name => Name},
             St1 = arc_stage(St#{mode := arc, arc := Arc, conns := Conns#{Conn => 1}}),
             {reply, {ok, 1, arc}, St1};
@@ -131,9 +132,12 @@ next_match(#{sim := Sim, stg := Stg} = St) ->
 
 arc_stage(#{arc := #{st := N, order := Order, char := Char, name := Name}} = St) ->
     CChar = lists:nth(N, Order),
-    Lv = lists:nth(N, [1, 2, 3, 4]),
-    Sim = vs_sim:start(vs_sim:seat(vs_sim:seat(vs_sim:new(), 1, Char, Name, false), 2, CChar, cpu_name(Lv), true)),
-    St#{sim := Sim, ai := vs_ai:new(Lv, seed())}.
+    Lv = lists:nth(N, [1, 2, 3, 4, 4]),
+    CName = case CChar of boss -> <<"OVERCLOCK">>; _ -> cpu_name(Lv) end,
+    Sim = vs_sim:start(vs_sim:seat(vs_sim:seat(vs_sim:new(), 1, Char, Name, false), 2, CChar, CName, true)),
+    %% Boss 战固定在厂区尽头
+    Stg = case CChar of boss -> 3; _ -> maps:get(stg, St) end,
+    St#{sim := Sim, ai := vs_ai:new(Lv, seed()), stg := Stg}.
 
 snapshot(#{sim := Sim, mode := Mode, arc := Arc, rdy := Rdy, conns := Conns, stg := Stg}) ->
     Snap = vs_sim:snapshot(Sim),
@@ -171,7 +175,7 @@ seed() -> erlang:unique_integer([positive]) + erlang:monotonic_time().
 shuffle(L) ->
     [X || {_, X} <- lists:sort([{rand:uniform(), X} || X <- L])].
 
-%% 通关后重新开始：前三个对手重新洗牌，镜像战仍在最后
+%% 通关后重新开始：前三个对手重新洗牌，镜像战和 Boss 仍在最后
 shuffle3(Order) ->
-    {Front, [Last]} = lists:split(length(Order) - 1, Order),
-    shuffle(Front) ++ [Last].
+    {Front, Last} = lists:split(length(Order) - 2, Order),
+    shuffle(Front) ++ Last.

@@ -113,7 +113,8 @@ cpu_vs_cpu_test_() ->
                        ?assert(N < 30 * 60 * 6),
                        ?assert(lists:member(vs_sim:winner(S), [1, 2]))
                end,
-               [{kai, mira, 1}, {bruno, zed, 2}, {mira, bruno, 3}, {zed, kai, 4}, {kai, kai, 5}])
+               [{kai, mira, 1}, {bruno, zed, 2}, {mira, bruno, 3}, {zed, kai, 4}, {kai, kai, 5},
+                {kai, boss, 6}, {mira, boss, 7}, {bruno, boss, 8}, {zed, boss, 9}])
      end}.
 
 bots(S, A1, A2, N) ->
@@ -131,3 +132,44 @@ bots(S, A1, A2, N) ->
             _ = iolist_to_binary(vs_json:encode(vs_sim:snapshot(S1))),
             bots(S1, A1b, A2b, N + 1)
     end.
+
+%% 泽德「挑天棍」：下 + 技，打得到跳进来的对手并把他挑上天
+zed_rising_staff_antiair_test() ->
+    S = run(fresh(mira, zed), ?R, ?L, 18),
+    %% 米拉向前跳，泽德在她落到头顶前出挑天棍
+    S1 = seq(S, [{?U bor ?R, 0, 2}, {?R, 0, 4}, {?R, ?D bor ?S, 1}, {0, ?D, 8}]),
+    ?assertEqual(launch, maps:get(s, f(S1, 2))),
+    ?assertEqual(zsp2, maps:get(mv, f(S1, 2))),
+    ?assert(hp(S1, 1) < 900),
+    ?assertEqual(air, maps:get(s, f(S1, 1))).
+
+%% 布鲁诺的投：先把对手举过头顶，再砸下去
+bruno_lift_throw_test() ->
+    S = close_up(fresh(bruno, kai)),
+    S1 = seq(S, [{?T, 0, 1}, {0, 0, 13}]),
+    ?assertEqual(grabbed, maps:get(s, f(S1, 2))),
+    ?assert(maps:get(z, f(S1, 2)) > 60),
+    S2 = run(S1, 0, 0, 40),
+    ?assertEqual(1000 - 150, hp(S2, 2)).
+
+%% Boss 不会蹲：下段（扫腿）防不住；但站着能防中段
+boss_cannot_block_low_test() ->
+    S = close_up(fresh(kai, boss)),
+    Low = seq(S, [{?D bor ?K, ?R bor ?D, 1}, {?D, ?R bor ?D, 12}]),
+    ?assert(hp(Low, 2) < 1450),
+    Mid = seq(S, [{?P, ?R, 1}, {0, ?R, 8}]),
+    ?assertEqual(1450, hp(Mid, 2)).
+
+%% Boss 的重拳带霸体：被轻拳打中也不会中断
+boss_punch_armor_test() ->
+    S = close_up(fresh(kai, boss)),
+    S1 = seq(S, [{0, ?P, 1}, {0, 0, 2}, {?P, 0, 1}, {0, 0, 4}]),
+    ?assertEqual(bpunch, maps:get(s, f(S1, 2))),
+    S2 = run(S1, 0, 0, 10),
+    ?assert(hp(S2, 1) < 1000).
+
+%% Boss 挑不起来
+boss_not_launchable_test() ->
+    S = close_up(fresh(kai, boss)),
+    S1 = seq(S, [{?K, 0, 1}, {0, 0, 6}]),
+    ?assertEqual(hurt, maps:get(s, f(S1, 2))).

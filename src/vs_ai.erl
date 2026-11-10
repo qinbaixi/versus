@@ -77,7 +77,8 @@ react(#{seen := Seen, lv := Lv} = Ai, #{x := X, id := Id} = Me, #{x := OX, s := 
       Sim) ->
     D = abs(OX - X),
     K = vs_sim:now(Sim),
-    Atk = lists:member(OS, [attack, cjab, sweep, launch, dash, runatk, jattack, slam, special]) andalso D < 170,
+    Atk = lists:member(OS, [attack, cjab, sweep, launch, dash, runatk, jattack, slam, special,
+                                bpunch, bstomp, charge]) andalso D < case OS of charge -> 400; bstomp -> 260; _ -> 170 end,
     Proj = lists:any(fun(#{o := Own, x := PX, vx := PVx}) ->
                              Own =/= Id andalso abs(PX - X) < 120 andalso (X - PX) * PVx > 0
                      end, vs_sim:projectiles(Sim)),
@@ -88,9 +89,10 @@ react(#{seen := Seen, lv := Lv} = Ai, #{x := X, id := Id} = Me, #{x := OX, s := 
             case V < block_p(Lv) of
                 true ->
                     Low = OS =:= sweep orelse OS =:= cjab orelse (OS =:= runatk andalso OC =:= mira andalso OMv =:= sp6)
-                        orelse (OS =:= slamland),
-                    Keys = case Low of true -> [back, down]; false -> [back] end,
-                    Ai1#{plan := [{Keys, 11}]};
+                        orelse (OS =:= slamland) orelse OS =:= bstomp,
+                    Keys = case Low andalso maps:get(c, Me) =/= boss of true -> [back, down]; false -> [back] end,
+                    Hold = case OS of bstomp -> 24; charge -> 30; bpunch -> 16; _ -> 11 end,
+                    Ai1#{plan := [{Keys, Hold}]};
                 false -> Ai1
             end;
         false when Key =:= none -> Ai#{seen := none};
@@ -113,6 +115,8 @@ think(Ai, Me, Opp, Sim) ->
             Ai2#{plan := Plan ++ [{[], G}]}
     end.
 
+choose(Ai0, #{c := boss} = Me, Opp, _Sim) ->
+    boss_choose(Ai0, Me, Opp);
 choose(Ai0, #{x := X, c := C, en := En, own := Own}, #{x := OX, s := OS, z := OZ, vz := OVz}, Sim) ->
     #{lv := Lv} = Ai0,
     D = abs(OX - X),
@@ -125,7 +129,10 @@ choose(Ai0, #{x := X, c := C, en := En, own := Own}, #{x := OX, s := OS, z := OZ
         OppDown, D > 110 -> {[{[fwd], 6}], Ai};
         OppDown -> {[{[], 5}], Ai};
         OppAir, D < 110, OZ < 95, OVz < 0 ->
-            case V < antiair_p(Lv) of
+            AA = antiair_p(Lv),
+            case V < AA of
+                true when C =:= zed, D > 50 -> {[{[down, s], 2}, {[], 26}], Ai};   %% 挑天棍
+                true when C =:= kai, V < AA * 0.5 -> {[{[down, s], 2}, {[], 30}], Ai};
                 true -> {[{[k], 2}, {[], 12}], Ai};
                 false -> {[{[back], 7}], Ai}
             end;
@@ -147,7 +154,7 @@ choose(Ai0, #{x := X, c := C, en := En, own := Own}, #{x := OX, s := OS, z := OZ
                 V < 0.47 -> {[{[up, fwd], 3}, {[fwd], 10}, {[p], 2}, {[], 12}], Ai};
                 V < 0.6, D < 270 -> {[{[fwd, s], 2}, {[], 18}], Ai};
                 V < 0.72, not Own -> {[{[s], 2}, {[], 22}], Ai};
-                V < 0.8, D < 190, C =/= kai -> {[{[down, s], 2}, {[], 22}], Ai};
+                V < 0.8, D < 190, C =/= kai, C =/= zed -> {[{[down, s], 2}, {[], 22}], Ai};
                 V < 0.9 -> {[{[fwd], 2}, {[], 2}, {[fwd], 8}, {[fwd, p], 2}, {[], 14}], Ai};
                 true -> {[{[back], 8}], Ai}
             end;
@@ -173,5 +180,47 @@ choose(Ai0, #{x := X, c := C, en := En, own := Own}, #{x := OX, s := OS, z := OZ
                 V < 0.84 -> {[{[down, p], 2}, {[down], 3}, {[down, k], 2}, {[down], 16}], Ai};
                 V < 0.92, C =:= kai -> {[{[down, s], 2}, {[], 30}], Ai};
                 true -> {[{[back], 2}, {[], 2}, {[back], 3}, {[], 8}], Ai}
+            end
+    end.
+
+%% ---- Boss「OVERCLOCK」：远处扔扳手、冲撞，中距离踩地，贴身重拳 / 抓投 / 超频连锤
+boss_choose(Ai0, #{x := X, en := En, own := Own}, #{x := OX, s := OS}) ->
+    D = abs(OX - X),
+    {V, Ai} = roll(Ai0),
+    OppDown = lists:member(OS, [down, getup, knockdown, dead]),
+    OppAir = lists:member(OS, [jump, jattack, slam]),
+    if
+        OppDown, D > 160 -> {[{[fwd], 8}], Ai};
+        OppDown -> {[{[], 6}], Ai};
+        OppAir, D < 150 -> {[{[back], 10}], Ai};
+        D > 380 ->
+            if
+                V < 0.4, not Own -> {[{[s], 2}, {[], 30}], Ai};
+                V < 0.7 -> {[{[fwd, s], 2}, {[], 46}], Ai};
+                true -> {[{[fwd], 16}], Ai}
+            end;
+        D > 160 ->
+            if
+                V < 0.28 -> {[{[fwd, s], 2}, {[], 46}], Ai};
+                V < 0.48, not Own -> {[{[s], 2}, {[], 30}], Ai};
+                V < 0.68, D < 270 -> {[{[k], 2}, {[], 38}], Ai};
+                true -> {[{[fwd], 12}], Ai}
+            end;
+        D > 110 ->
+            if
+                V < 0.4 -> {[{[fwd], 8}], Ai};
+                V < 0.65 -> {[{[p], 2}, {[], 31}], Ai};
+                V < 0.85 -> {[{[k], 2}, {[], 38}], Ai};
+                true -> {[{[back], 10}], Ai}
+            end;
+        true ->
+            Blk = OS =:= block,
+            if
+                En >= 100, V < 0.35 -> {[{[u], 2}, {[], 44}], Ai};
+                Blk, V < 0.45 -> {[{[t], 2}, {[], 24}], Ai};
+                V < 0.18 -> {[{[t], 2}, {[], 24}], Ai};
+                V < 0.62 -> {[{[p], 2}, {[], 31}], Ai};
+                V < 0.8 -> {[{[k], 2}, {[], 38}], Ai};
+                true -> {[{[back], 12}], Ai}
             end
     end.
