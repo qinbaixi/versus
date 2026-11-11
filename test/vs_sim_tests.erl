@@ -1,5 +1,6 @@
 -module(vs_sim_tests).
 -include_lib("eunit/include/eunit.hrl").
+-include("vs.hrl").
 
 -define(L, 1). -define(R, 2). -define(U, 4). -define(D, 8).
 -define(P, 16). -define(K, 32). -define(S, 64). -define(SU, 128). -define(T, 256).
@@ -17,7 +18,7 @@ seq(S, []) -> S;
 seq(S, [{M1, M2, N} | T]) -> seq(run(S, M1, M2, N), T).
 
 f(S, I) -> vs_sim:fighter(S, I).
-hp(S, I) -> maps:get(hp, f(S, I)).
+hp(S, I) -> (f(S, I))#fighter.hp.
 close_up(S) ->
     %% 让两人走到贴身距离
     run(S, ?R, ?L, 40).
@@ -39,8 +40,8 @@ jab_hits_and_block_test() ->
 combo_counts_test() ->
     S = close_up(fresh()),
     S1 = seq(S, [{?P, 0, 1}, {0, 0, 5}, {?P, 0, 1}, {0, 0, 5}, {?P, 0, 1}, {0, 0, 8}]),
-    ?assertEqual(3, maps:get(hc, f(S1, 1))),
-    ?assert(lists:member(maps:get(s, f(S1, 2)), [knockdown, down])).
+    ?assertEqual(3, (f(S1, 1))#fighter.hc),
+    ?assert(lists:member((f(S1, 2))#fighter.s, [knockdown, down])).
 
 sweep_must_be_blocked_low_test() ->
     S = close_up(fresh()),
@@ -81,25 +82,24 @@ projectile_test() ->
 launcher_juggle_cap_test() ->
     S = close_up(fresh()),
     S1 = seq(S, [{?K, 0, 1}, {0, 0, 6}]),
-    ?assertEqual(air, maps:get(s, f(S1, 2))).
+    ?assertEqual(air, (f(S1, 2))#fighter.s).
 
 super_needs_meter_test() ->
     S = close_up(fresh()),
     S1 = seq(S, [{?SU, 0, 1}, {0, 0, 5}]),
-    ?assertNotEqual(special, maps:get(s, f(S1, 1))),
-    #{fs := Fs} = S,
-    F1 = maps:get(1, Fs),
-    S2 = seq(S#{fs := Fs#{1 := F1#{en := 100.0}}}, [{?SU, 0, 1}, {0, 0, 5}]),
-    ?assertEqual(special, maps:get(s, f(S2, 1))),
+    ?assertNotEqual(special, (f(S1, 1))#fighter.s),
+    #sim{fs = #{1 := F1} = Fs} = S,
+    S2 = seq(S#sim{fs = Fs#{1 := F1#fighter{en = 100.0}}}, [{?SU, 0, 1}, {0, 0, 5}]),
+    ?assertEqual(special, (f(S2, 1))#fighter.s),
     S3 = run(S2, 0, 0, 70),
     ?assert(hp(S3, 2) < 900 - 150),
-    ?assertEqual(0, trunc(maps:get(en, f(S3, 1)) / 100)).
+    ?assertEqual(0, trunc((f(S3, 1))#fighter.en / 100)).
 
 timeout_round_test() ->
     S = close_up(fresh()),
     S1 = seq(S, [{?P, 0, 1}, {0, 0, 8}]),
     S2 = run(S1, 0, 0, 1800),
-    ?assertEqual({1, 0}, maps:get(w, S2)).
+    ?assertEqual({1, 0}, S2#sim.w).
 
 %% 两个 CPU 打完整场比赛：必须在合理时间内分出胜负，全程不崩溃，位置始终在擂台内
 cpu_vs_cpu_test_() ->
@@ -125,7 +125,7 @@ bots(S, A1, A2, N) ->
             {M2, A2b} = vs_ai:decide(A2, S, 2),
             S1 = vs_sim:tick(S, M1, M2),
             lists:foreach(fun(I) ->
-                                  #{x := X, z := Z} = vs_sim:fighter(S1, I),
+                                  #fighter{x = X, z = Z} = vs_sim:fighter(S1, I),
                                   ?assert(X >= 34.9 andalso X =< 965.1),
                                   ?assert(Z >= 0)
                           end, [1, 2]),
@@ -138,17 +138,17 @@ zed_rising_staff_antiair_test() ->
     S = run(fresh(mira, zed), ?R, ?L, 18),
     %% 米拉向前跳，泽德在她落到头顶前出挑天棍
     S1 = seq(S, [{?U bor ?R, 0, 2}, {?R, 0, 4}, {?R, ?D bor ?S, 1}, {0, ?D, 8}]),
-    ?assertEqual(launch, maps:get(s, f(S1, 2))),
-    ?assertEqual(zsp2, maps:get(mv, f(S1, 2))),
+    ?assertEqual(launch, (f(S1, 2))#fighter.s),
+    ?assertEqual(zsp2, (f(S1, 2))#fighter.mv),
     ?assert(hp(S1, 1) < 900),
-    ?assertEqual(air, maps:get(s, f(S1, 1))).
+    ?assertEqual(air, (f(S1, 1))#fighter.s).
 
 %% 布鲁诺的投：先把对手举过头顶，再砸下去
 bruno_lift_throw_test() ->
     S = close_up(fresh(bruno, kai)),
     S1 = seq(S, [{?T, 0, 1}, {0, 0, 13}]),
-    ?assertEqual(grabbed, maps:get(s, f(S1, 2))),
-    ?assert(maps:get(z, f(S1, 2)) > 60),
+    ?assertEqual(grabbed, (f(S1, 2))#fighter.s),
+    ?assert((f(S1, 2))#fighter.z > 60),
     S2 = run(S1, 0, 0, 40),
     ?assertEqual(1000 - 150, hp(S2, 2)).
 
@@ -164,7 +164,7 @@ boss_cannot_block_low_test() ->
 boss_punch_armor_test() ->
     S = close_up(fresh(kai, boss)),
     S1 = seq(S, [{0, ?P, 1}, {0, 0, 2}, {?P, 0, 1}, {0, 0, 4}]),
-    ?assertEqual(bpunch, maps:get(s, f(S1, 2))),
+    ?assertEqual(bpunch, (f(S1, 2))#fighter.s),
     S2 = run(S1, 0, 0, 10),
     ?assert(hp(S2, 1) < 1000).
 
@@ -172,7 +172,7 @@ boss_punch_armor_test() ->
 boss_not_launchable_test() ->
     S = close_up(fresh(kai, boss)),
     S1 = seq(S, [{?K, 0, 1}, {0, 0, 6}]),
-    ?assertEqual(hurt, maps:get(s, f(S1, 2))).
+    ?assertEqual(hurt, (f(S1, 2))#fighter.s).
 
 %% 浮空连段：地面 J J K 挑空 → 跳追 → 空中 J J J → K，能连上 7 下以上；但一套最多打掉约 30% 血
 air_combo_test() ->

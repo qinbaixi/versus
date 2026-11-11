@@ -4,7 +4,16 @@
 %%   并且和玩家一样通过输入掩码操作角色（不作弊）。
 %% ==========================================================================
 -module(vs_ai).
+-include("vs.hrl").
 -export([new/2, decide/3]).
+
+%% CPU 的内部状态
+-record(ai, {
+    lv = 1      :: 1..4,           %% 难度
+    rng         :: rand:state(),   %% 随机数状态（可复现）
+    plan = []   :: [{[atom()], pos_integer()}], %% 待执行的按键计划：{按键列表, 持续 tick}
+    seen = none :: term()          %% 已经对哪一次出招掷过防御骰子
+}).
 
 -define(LEFT, 1).
 -define(RIGHT, 2).
@@ -17,8 +26,8 @@
 -define(THROW, 256).
 
 new(Level, Seed) ->
-    #{lv => max(1, min(4, Level)), rng => rand:seed_s(exsss, {Seed, Seed * 7 + 13, 4242}),
-      plan => [], seen => none}.
+    #ai{lv = max(1, min(4, Level)), rng = rand:seed_s(exsss, {Seed, Seed * 7 + 13, 4242}),
+        plan = [], seen = none}.
 
 %% -> {Mask, Ai}
 decide(Ai0, Sim, Seat) ->
@@ -27,21 +36,21 @@ decide(Ai0, Sim, Seat) ->
     case vs_sim:phase(Sim) of
         fight when Me =/= undefined, Opp =/= undefined ->
             Ai1 = react(Ai0, Me, Opp, Sim),
-            Ai2 = case maps:get(plan, Ai1) of
+            Ai2 = case Ai1#ai.plan of
                       [] -> think(Ai1, Me, Opp, Sim);
                       _ -> Ai1
                   end,
             pop(Ai2, Me, Opp);
         _ ->
-            {0, Ai0#{plan := []}}
+            {0, Ai0#ai{plan = []}}
     end.
 
-pop(#{plan := [{Keys, N} | Rest]} = Ai, Me, Opp) ->
+pop(#ai{plan = [{Keys, N} | Rest]} = Ai, Me, Opp) ->
     Plan = case N > 1 of true -> [{Keys, N - 1} | Rest]; false -> Rest end,
-    {mask(Keys, Me, Opp), Ai#{plan := Plan}};
+    {mask(Keys, Me, Opp), Ai#ai{plan = Plan}};
 pop(Ai, _, _) -> {0, Ai}.
 
-mask(Keys, #{x := X, f := Face}, #{x := OX}) ->
+mask(Keys, #fighter{x = X, f = Face}, #fighter{x = OX}) ->
     Fwd = if OX > X -> ?RIGHT; OX < X -> ?LEFT; Face =:= 1 -> ?RIGHT; true -> ?LEFT end,
     Back = ?LEFT + ?RIGHT - Fwd,
     lists:foldl(fun(K, M) ->
@@ -51,9 +60,9 @@ mask(Keys, #{x := X, f := Face}, #{x := OX}) ->
                               end
                 end, 0, Keys).
 
-roll(#{rng := R} = Ai) ->
+roll(#ai{rng = R} = Ai) ->
     {V, R1} = rand:uniform_s(R),
-    {V, Ai#{rng := R1}}.
+    {V, Ai#ai{rng = R1}}.
 
 int(Ai, Lo, Hi) ->
     {V, Ai1} = roll(Ai),
@@ -66,62 +75,62 @@ block_p(4) -> 0.9.
 
 antiair_p(Lv) -> 0.12 + 0.2 * (Lv - 1).
 
-gap(#{lv := Lv} = Ai) ->
+gap(#ai{lv = Lv} = Ai) ->
     {Lo, Hi} = case Lv of 1 -> {14, 30}; 2 -> {8, 18}; 3 -> {3, 10}; _ -> {1, 6} end,
     int(Ai, Lo, Hi).
 
-can_act(#{s := S}) -> lists:member(S, [idle, walk, run, crouch, block]).
+can_act(#fighter{s = S}) -> lists:member(S, [idle, walk, run, crouch, block]).
 
 %% ---- 反应：对手出招的头几帧里掷一次骰子决定防不防
-react(#{seen := Seen, lv := Lv} = Ai, #{x := X, id := Id} = Me, #{x := OX, s := OS, t := OT, cb := OCb, mv := OMv, c := OC},
+react(#ai{seen = Seen, lv = Lv} = Ai, #fighter{x = X, id = Id, c = MyC} = Me,
+      #fighter{x = OX, s = OS, t = OT, cb = OCb, mv = OMv, c = OC},
       Sim) ->
     D = abs(OX - X),
     K = vs_sim:now(Sim),
     Atk = lists:member(OS, [attack, cjab, sweep, launch, dash, runatk, jattack, slam, special,
                                 bpunch, bstomp, charge]) andalso D < case OS of charge -> 400; bstomp -> 260; _ -> 170 end,
-    Proj = lists:any(fun(#{o := Own, x := PX, vx := PVx}) ->
+    Proj = lists:any(fun(#proj{o = Own, x = PX, vx = PVx}) ->
                              Own =/= Id andalso abs(PX - X) < 120 andalso (X - PX) * PVx > 0
                      end, vs_sim:projectiles(Sim)),
     Key = if Atk -> {OS, OCb, K - OT}; Proj -> proj; true -> none end,
     case Key =/= none andalso Key =/= Seen andalso can_act(Me) of
         true ->
-            {V, Ai1} = roll(Ai#{seen := Key}),
+            {V, Ai1} = roll(Ai#ai{seen = Key}),
             case V < block_p(Lv) of
                 true ->
                     Low = OS =:= sweep orelse OS =:= cjab orelse (OS =:= runatk andalso OC =:= mira andalso OMv =:= sp6)
                         orelse (OS =:= slamland) orelse OS =:= bstomp,
-                    Keys = case Low andalso maps:get(c, Me) =/= boss of true -> [back, down]; false -> [back] end,
+                    Keys = case Low andalso MyC =/= boss of true -> [back, down]; false -> [back] end,
                     Hold = case OS of bstomp -> 24; charge -> 30; bpunch -> 16; _ -> 11 end,
-                    Ai1#{plan := [{Keys, Hold}]};
+                    Ai1#ai{plan = [{Keys, Hold}]};
                 false -> Ai1
             end;
-        false when Key =:= none -> Ai#{seen := none};
+        false when Key =:= none -> Ai#ai{seen = none};
         false -> Ai
     end.
 
 %% ---- 决策：计划为空时挑下一段
-think(Ai, #{s := grabbed}, _Opp, _Sim) ->
+think(#ai{lv = Lv} = Ai, #fighter{s = grabbed}, _Opp, _Sim) ->
     {V, Ai1} = roll(Ai),
-    case V < 0.12 * maps:get(lv, Ai) of
-        true -> Ai1#{plan := [{[t], 2}]};
-        false -> Ai1#{plan := [{[], 3}]}
+    case V < 0.12 * Lv of
+        true -> Ai1#ai{plan = [{[t], 2}]};
+        false -> Ai1#ai{plan = [{[], 3}]}
     end;
 think(Ai, Me, Opp, Sim) ->
     case can_act(Me) of
-        false -> Ai#{plan := [{[], 2}]};
+        false -> Ai#ai{plan = [{[], 2}]};
         true ->
             {Plan, Ai1} = choose(Ai, Me, Opp, Sim),
             {G, Ai2} = gap(Ai1),
-            Ai2#{plan := Plan ++ [{[], G}]}
+            Ai2#ai{plan = Plan ++ [{[], G}]}
     end.
 
-choose(Ai0, #{c := boss} = Me, Opp, _Sim) ->
+choose(Ai0, #fighter{c = boss} = Me, Opp, _Sim) ->
     boss_choose(Ai0, Me, Opp);
-choose(Ai0, #{x := X, c := C, en := En, own := Own}, #{x := OX, s := OS, z := OZ, vz := OVz}, Sim) ->
-    #{lv := Lv} = Ai0,
+choose(#ai{lv = Lv} = Ai0, #fighter{x = X, c = C, en = En, own = Own}, #fighter{x = OX, s = OS, z = OZ, vz = OVz}, Sim) ->
     D = abs(OX - X),
     {V, Ai} = roll(Ai0),
-    #{reach := Reach} = vs_sim:stats(C),
+    #stats{reach = Reach} = vs_sim:stats(C),
     OppDown = lists:member(OS, [down, getup, knockdown, dead]),
     OppAir = lists:member(OS, [jump, jattack, slam]),
     Item = vs_sim:item(Sim),
@@ -138,7 +147,7 @@ choose(Ai0, #{x := X, c := C, en := En, own := Own}, #{x := OX, s := OS, z := OZ
             end;
         OppAir -> {[{[back], 4}], Ai};
         Item =/= none, V < 0.45 ->
-            #{x := IX} = Item,
+            #item{x = IX} = Item,
             Toward = (IX - X) * (OX - X) >= 0,
             {[{[case Toward of true -> fwd; false -> back end], 8}], Ai};
         D > 380 ->
@@ -186,7 +195,7 @@ choose(Ai0, #{x := X, c := C, en := En, own := Own}, #{x := OX, s := OS, z := OZ
     end.
 
 %% ---- Boss「OVERCLOCK」：远处扔扳手、冲撞，中距离踩地，贴身重拳 / 抓投 / 超频连锤
-boss_choose(Ai0, #{x := X, en := En, own := Own}, #{x := OX, s := OS}) ->
+boss_choose(Ai0, #fighter{x = X, en = En, own = Own}, #fighter{x = OX, s = OS}) ->
     D = abs(OX - X),
     {V, Ai} = roll(Ai0),
     OppDown = lists:member(OS, [down, getup, knockdown, dead]),
